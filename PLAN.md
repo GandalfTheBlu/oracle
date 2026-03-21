@@ -53,12 +53,18 @@
 
 ## Phase 2 — Tool Integrations (Goal 2)
 
-*(Not started. Begins after Phase 1 milestones are solid.)*
+### Milestone 2.1 — Core Dev Tools ✅
+- [x] Tool calling via <tool>{...}</tool> directive pattern (works with any local LLM)
+- [x] Tool execution loop with up to 5 rounds per turn
+- [x] read_file, write_file, run_command (safety-filtered), list_dir, search_files
+- [x] toolsUsed tracked per turn in contextStats and learning log
+- [x] Tools injected into system prompt only when needed
 
-- [ ] Evaluate tool-calling approaches
-- [ ] Sub-agent architecture design
-- [ ] Software development tools (file read/write, shell, search)
-- [ ] Feedback loop for tool corrections
+### Milestone 2.2 — Tool Improvements (next)
+- [ ] Path normalization: handle bash-style /c/foo → C:/foo automatically
+- [ ] Tool approval mode: flag dangerous commands (write, run) for user confirmation
+- [ ] Better tool error reporting back to user (not just LLM-facing)
+- [ ] More tools: web search, git operations, code execution with output capture
 
 ---
 

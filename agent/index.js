@@ -1,6 +1,6 @@
 /**
  * Oracle Agent — core intelligence layer.
- * Milestone 1.5: multi-step reasoning + learning/feedback.
+ * Milestone 2.1: tool integrations (file read/write, shell, search).
  */
 
 import { chatCompletion } from './llm.js';
@@ -21,11 +21,20 @@ import {
 } from './usermodel.js';
 import { reason } from './reasoning.js';
 import { logInteraction, recordFeedback, getLearningStats } from './learning.js';
+import {
+  buildToolsPrompt,
+  extractToolCalls,
+  stripToolCalls,
+  executeToolCalls,
+} from './tools/index.js';
 
 const BASE_SYSTEM_PROMPT = `You are Oracle, a personal AI assistant in the spirit of JARVIS from Iron Man. \
 You are thoughtful, direct, and develop a genuine rapport with the user over time. \
 You are concise by default but elaborate when the topic warrants it. \
 You remember the conversation and refer back to it naturally.`;
+
+/** Max tool execution rounds per turn (prevents infinite loops). */
+const MAX_TOOL_ROUNDS = 5;
 
 export class Agent {
   constructor() {
@@ -51,7 +60,8 @@ export class Agent {
     const systemPrompt =
       BASE_SYSTEM_PROMPT +
       buildPersonalityPrompt(this.personality) +
-      buildUserModelPrompt(this.userModel);
+      buildUserModelPrompt(this.userModel) +
+      buildToolsPrompt();
 
     // Retrieve relevant memories.
     let memoryBlock = '';
@@ -68,7 +78,7 @@ export class Agent {
       console.warn('[agent] Memory retrieval failed:', err.message);
     }
 
-    // Build context-safe message list (compacts if over budget).
+    // Build context-safe message list.
     const contextMessages = await buildContext(this.history, systemPrompt, userMessage);
 
     const fullSystemContent = systemPrompt + memoryBlock;
@@ -81,17 +91,47 @@ export class Agent {
       console.warn('[agent] Reasoning pass failed:', err.message);
     }
 
-    // ── Final reply ───────────────────────────────────────────────────────────
     const reasoningNote = internalReasoning
-      ? `\n\n[Your internal reasoning for this response]: ${internalReasoning}\nNow give your actual reply:`
+      ? `\n\n[Your internal reasoning]: ${internalReasoning}\nNow give your actual reply:`
       : '';
 
-    const messages = [
+    // ── Tool execution loop ───────────────────────────────────────────────────
+    let toolsUsed = [];
+    let reply = '';
+
+    // Build the working message list for this turn (may grow with tool results).
+    const workingMessages = [
       { role: 'system', content: fullSystemContent + reasoningNote },
       ...contextMessages,
     ];
 
-    const reply = await chatCompletion(messages, { maxTokens: 1024 });
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const raw = await chatCompletion(workingMessages, { maxTokens: 1024 });
+      const calls = extractToolCalls(raw);
+
+      if (calls.length === 0) {
+        // No tool calls — this is the final reply.
+        reply = stripToolCalls(raw);
+        break;
+      }
+
+      // Execute tools and feed results back.
+      toolsUsed.push(...calls.map(c => c.name));
+      const toolResults = await executeToolCalls(calls);
+      console.log(`[agent] Tool round ${round + 1}: ${calls.map(c => c.name).join(', ')}`);
+
+      // Append the assistant's tool-call message and the results.
+      workingMessages.push({ role: 'assistant', content: raw });
+      workingMessages.push({
+        role: 'user',
+        content: `[Tool results]:\n${toolResults}\n\nNow give your final response to the user based on these results.`,
+      });
+    }
+
+    if (!reply) {
+      // Exhausted rounds — use last raw output stripped of any tool tags.
+      reply = stripToolCalls(workingMessages[workingMessages.length - 1]?.content || '');
+    }
 
     // Append assistant turn to full history.
     this.history.push({ role: 'assistant', content: reply });
@@ -107,6 +147,7 @@ export class Agent {
       userMessage,
       reply,
       reasoning: internalReasoning,
+      toolsUsed,
       contextStats: {
         totalMessages: this.history.length,
         contextMessages: contextMessages.length,
@@ -126,11 +167,12 @@ export class Agent {
       turnId,
       totalMessages: this.history.length,
       contextMessages: contextMessages.length,
-      estimatedContextTokens: estimateMessagesTokens(messages),
+      estimatedContextTokens: estimateMessagesTokens(workingMessages),
       memoriesInjected,
       familiarity: this.personality.relationship.familiarity,
       interactionCount: this.personality.relationship.interactionCount,
       hasReasoning: !!internalReasoning,
+      toolsUsed,
     };
 
     return { reply, history: this.getHistory(), contextStats: stats };
@@ -138,25 +180,15 @@ export class Agent {
 
   /**
    * Record explicit feedback on a past turn.
-   * @param {string} turnId
-   * @param {'positive'|'negative'} feedback
-   * @param {string} [note]
-   * @returns {boolean}
    */
   feedback(turnId, feedback, note = '') {
     return recordFeedback(turnId, feedback, note);
   }
 
-  /**
-   * Return a copy of the conversation history.
-   */
   getHistory() {
     return this.history.map(m => ({ ...m }));
   }
 
-  /**
-   * Return current personality + user model state (for inspection).
-   */
   getState() {
     return {
       personality: this.personality,
@@ -165,10 +197,6 @@ export class Agent {
     };
   }
 
-  /**
-   * Clear the conversation history (in-memory and on disk).
-   * Does NOT reset personality, user model, or learning log.
-   */
   reset() {
     this.history = [];
     saveHistory([]);
