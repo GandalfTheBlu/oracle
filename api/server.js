@@ -64,6 +64,16 @@ app.post('/reset', (_req, res) => {
   res.json({ status: 'ok', message: 'Conversation reset.' });
 });
 
+// ── State inspection ──────────────────────────────────────────────────────────
+
+/**
+ * GET /state
+ * Returns personality + user model for inspection/evaluation.
+ */
+app.get('/state', (_req, res) => {
+  res.json(agent.getState());
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {

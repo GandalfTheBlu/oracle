@@ -30,11 +30,13 @@
 - [x] Background extraction: LLM extracts semantic facts after each turn
 - [x] Cross-session recall verified: fresh conversation remembers past facts
 
-### Milestone 1.4 — Personality & User Model
-- [ ] Persistent personality config (traits, tone, quirks)
-- [ ] User model: structured profile built from interactions
-- [ ] Relationship state: familiarity, trust, history summary
-- [ ] Personality injected into system prompt dynamically
+### Milestone 1.4 — Personality & User Model ✅
+- [x] Persistent personality config (traits, tone, quirks) — data/personality.json
+- [x] User model: structured profile (facts, interests, preferences) — data/usermodel.json
+- [x] Relationship state: familiarity (logarithmic), trust, interactionCount, firstSeen/lastSeen
+- [x] Personality + user model injected into system prompt dynamically
+- [x] GET /state endpoint for inspection
+- [x] User model updated via LLM extraction after each turn (background)
 
 ### Milestone 1.5 — Learning & Reasoning
 - [ ] Multi-step reasoning: internal scratchpad before final response
