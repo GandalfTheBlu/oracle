@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { normalizePath } from './utils.js';
 
 /** Commands/patterns that are always blocked. */
 const BLOCKED = [
@@ -19,6 +20,7 @@ export const runCommand = {
 
   async run({ command, cwd }) {
     if (!command) throw new Error('command is required');
+    if (cwd) cwd = normalizePath(cwd);
 
     for (const pattern of BLOCKED) {
       if (pattern.test(command)) {

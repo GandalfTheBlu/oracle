@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { normalizePath } from './utils.js';
 
 const MAX_OUTPUT = 16_000;
 
@@ -6,6 +7,7 @@ export const searchFiles = {
   description: 'Search for a pattern in files. Args: { pattern: string, path?: string, glob?: string }',
 
   async run({ pattern, path = '.', glob }) {
+    path = normalizePath(path);
     if (!pattern) throw new Error('pattern is required');
 
     // Use grep (available in Git Bash on Windows)

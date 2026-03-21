@@ -1,5 +1,6 @@
 import { readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
+import { normalizePath } from './utils.js';
 
 const MAX_ENTRIES = 200;
 
@@ -8,6 +9,7 @@ export const listDir = {
 
   async run({ path, recursive = false }) {
     if (!path) throw new Error('path is required');
+    path = normalizePath(path);
     if (!existsSync(path)) throw new Error(`Path not found: ${path}`);
 
     const entries = [];

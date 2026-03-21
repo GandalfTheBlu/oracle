@@ -60,11 +60,17 @@
 - [x] toolsUsed tracked per turn in contextStats and learning log
 - [x] Tools injected into system prompt only when needed
 
-### Milestone 2.2 — Tool Improvements (next)
-- [ ] Path normalization: handle bash-style /c/foo → C:/foo automatically
-- [ ] Tool approval mode: flag dangerous commands (write, run) for user confirmation
-- [ ] Better tool error reporting back to user (not just LLM-facing)
-- [ ] More tools: web search, git operations, code execution with output capture
+### Milestone 2.2 — Tool Improvements ✅
+- [x] Path normalization: /c/foo → C:/foo, /mnt/c/foo → C:/foo (agent/tools/utils.js)
+- [x] Tool errors surfaced in contextStats.toolErrors per turn
+- [x] Git tool: git status/log/diff/show/branch/commit etc. with blocked-ops list
+- [x] Tools prompt tightened (~40% token reduction)
+
+### Milestone 2.3 — Tool Reliability & UI (next)
+- [ ] Smarter tool invocation: detect when LLM answers without using a tool it should have used
+- [ ] Expose tools list and tool results in API response for UI display
+- [ ] UI: show tool calls/results inline in the chat (collapsible)
+- [ ] Context pressure: memory + personality + tools + history compete hard in 4096 tokens — measure and optimize
 
 ---
 

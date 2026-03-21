@@ -16,6 +16,7 @@ import { writeFile } from './write_file.js';
 import { runCommand } from './run_command.js';
 import { listDir } from './list_dir.js';
 import { searchFiles } from './search_files.js';
+import { git } from './git.js';
 
 /** Tool registry — name → tool definition. */
 export const TOOLS = {
@@ -24,6 +25,7 @@ export const TOOLS = {
   run_command: runCommand,
   list_dir: listDir,
   search_files: searchFiles,
+  git,
 };
 
 /**
@@ -32,17 +34,15 @@ export const TOOLS = {
  * @returns {string}
  */
 export function buildToolsPrompt() {
-  const toolList = Object.entries(TOOLS)
-    .map(([name, t]) => `  - ${name}: ${t.description}`)
+  const toolList = Object.keys(TOOLS).join(', ');
+  const argsList = Object.entries(TOOLS)
+    .map(([name, t]) => `${name}: ${t.description}`)
     .join('\n');
 
-  return `\n\n[Tool use]:
-When you need to read/write files, run commands, or search code, emit one or more tool calls embedded in your response:
-<tool>{"name": "TOOL_NAME", "args": {ARGS_JSON}}</tool>
-Available tools:
-${toolList}
-You may emit multiple tool calls. After tools run, you will receive results and should give a final response.
-Only use tools when actually needed — do not use them for conversational replies.`;
+  return `\n\n[Tools]: To use a tool, emit: <tool>{"name":"NAME","args":{...}}</tool>
+Tools: ${toolList}
+Args: ${argsList}
+Only use tools when needed. Multiple calls allowed per turn.`;
 }
 
 /**
@@ -77,11 +77,12 @@ export function stripToolCalls(text) {
 }
 
 /**
- * Execute a list of tool calls and return formatted results.
+ * Execute a list of tool calls and return formatted results + error list.
  * @param {Array<{name: string, args: object}>} calls
- * @returns {Promise<string>}  Formatted tool results block.
+ * @returns {Promise<{output: string, errors: string[]}>}
  */
 export async function executeToolCalls(calls) {
+  const errors = [];
   const results = await Promise.all(
     calls.map(async ({ name, args }) => {
       const tool = TOOLS[name];
@@ -89,9 +90,10 @@ export async function executeToolCalls(calls) {
         const output = await tool.run(args);
         return `[tool: ${name}]\n${output}`;
       } catch (err) {
+        errors.push(`${name}: ${err.message}`);
         return `[tool: ${name}] ERROR: ${err.message}`;
       }
     })
   );
-  return results.join('\n\n');
+  return { output: results.join('\n\n'), errors };
 }

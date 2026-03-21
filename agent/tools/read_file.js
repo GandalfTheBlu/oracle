@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, statSync } from 'fs';
+import { normalizePath } from './utils.js';
 
 const MAX_BYTES = 32_000; // ~8k tokens
 
@@ -7,6 +8,7 @@ export const readFile = {
 
   async run({ path, offset = 0, limit }) {
     if (!path) throw new Error('path is required');
+    path = normalizePath(path);
     if (!existsSync(path)) throw new Error(`File not found: ${path}`);
 
     const stat = statSync(path);

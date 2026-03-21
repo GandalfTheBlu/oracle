@@ -97,6 +97,7 @@ export class Agent {
 
     // ── Tool execution loop ───────────────────────────────────────────────────
     let toolsUsed = [];
+    let toolErrors = [];
     let reply = '';
 
     // Build the working message list for this turn (may grow with tool results).
@@ -117,7 +118,8 @@ export class Agent {
 
       // Execute tools and feed results back.
       toolsUsed.push(...calls.map(c => c.name));
-      const toolResults = await executeToolCalls(calls);
+      const { output: toolResults, errors: roundErrors } = await executeToolCalls(calls);
+      if (roundErrors.length) toolErrors.push(...roundErrors);
       console.log(`[agent] Tool round ${round + 1}: ${calls.map(c => c.name).join(', ')}`);
 
       // Append the assistant's tool-call message and the results.
@@ -173,6 +175,7 @@ export class Agent {
       interactionCount: this.personality.relationship.interactionCount,
       hasReasoning: !!internalReasoning,
       toolsUsed,
+      toolErrors: toolErrors.length ? toolErrors : undefined,
     };
 
     return { reply, history: this.getHistory(), contextStats: stats };
