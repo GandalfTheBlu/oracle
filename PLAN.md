@@ -83,11 +83,19 @@
 - [x] Context budget fix: reasoning note included in fullSystemContent before buildContext call
 - [x] Tools prompt directive tightened: "call tools immediately without preamble"
 
-### Milestone 2.5 — Next
-- [ ] Genuine personality evolution: distill learning log into behavioral updates periodically
-- [ ] Oracle self-improvement: review successes/failures, adjust tone/style over time
-- [ ] Multi-turn tool correction: user can say "that was wrong" and Oracle retries
-- [ ] UI reset button
+### Milestone 2.5 — Personality Evolution ✅
+- [x] agent/evolution.js: shouldEvolve (every 10 interactions), runEvolution (LLM analysis), applyEvolution
+- [x] Observations injected into buildPersonalityPrompt — immediately influence behavior
+- [x] Traits and tone update when LLM identifies clear patterns from feedback signals
+- [x] POST /evolve endpoint for forced evolution (used in testing + evaluation)
+- [x] Tested: 10 "too verbose" signals → trait added ("keep responses 1-2 sentences"), trait removed, baseline length 622→384→291 chars across two passes
+- [x] test-evolution.js: full API-driven test harness (reset, signal, evolve, diff, compare)
+
+### Milestone 2.6 — Next
+- [ ] UI reset button + conversation export
+- [ ] Multi-turn tool correction: user can say "that was wrong" → Oracle retries with different args
+- [ ] Observation deduplication fix (rolling window has some duplicates from parallel evolution runs)
+- [ ] Proactive behaviour: Oracle can volunteer observations or suggestions unprompted
 
 ---
 

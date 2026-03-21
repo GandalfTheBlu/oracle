@@ -104,7 +104,7 @@ export function recordInteraction(personality) {
  * @returns {string}
  */
 export function buildPersonalityPrompt(personality) {
-  const { traits, tone, relationship } = personality;
+  const { traits, tone, relationship, evolution } = personality;
   const { familiarity, interactionCount } = relationship;
 
   const lines = [
@@ -121,6 +121,12 @@ export function buildPersonalityPrompt(personality) {
   }
   if (interactionCount >= 50) {
     lines.push('You are a long-standing trusted companion to this user.');
+  }
+
+  // Inject learned observations so they actively influence behavior.
+  if (evolution?.observations?.length) {
+    const recent = evolution.observations.slice(-6);
+    lines.push(`\n[Learned from past interactions — follow these]:\n${recent.map(o => `- ${o}`).join('\n')}`);
   }
 
   return lines.join('\n');

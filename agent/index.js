@@ -21,6 +21,7 @@ import {
 } from './usermodel.js';
 import { reason } from './reasoning.js';
 import { logInteraction, recordFeedback, getLearningStats } from './learning.js';
+import { shouldEvolve, runEvolution, applyEvolution } from './evolution.js';
 import {
   buildToolsPrompt,
   queryNeedsTools,
@@ -128,6 +129,7 @@ export class Agent {
       updateUserModel(this.userModel, userMessage, reply, chatCompletion).then(() =>
         saveUserModel(this.userModel)
       ),
+      this._maybeEvolve(),
     ]).catch(err => console.warn('[agent] Background update failed:', err.message));
 
     return {
@@ -269,6 +271,32 @@ export class Agent {
     });
 
     onDone(stats);
+  }
+
+  /** Run evolution if enough interactions have occurred since the last pass. */
+  async _maybeEvolve() {
+    if (!shouldEvolve(this.personality)) return;
+    console.log('[agent] Evolution threshold reached — running personality analysis...');
+    const updates = await runEvolution(this.personality, this.userModel, chatCompletion);
+    if (updates) {
+      applyEvolution(this.personality, updates);
+      savePersonality(this.personality);
+    }
+  }
+
+  /**
+   * Force an evolution pass regardless of interaction count.
+   * Useful for testing and manual inspection.
+   * @returns {Promise<{before: object, updates: object|null, after: object}>}
+   */
+  async forceEvolve() {
+    const before = structuredClone(this.personality);
+    const updates = await runEvolution(this.personality, this.userModel, chatCompletion);
+    if (updates) {
+      applyEvolution(this.personality, updates);
+      savePersonality(this.personality);
+    }
+    return { before, updates, after: structuredClone(this.personality) };
   }
 
   /** Record explicit feedback on a past turn. */

@@ -128,6 +128,23 @@ app.get('/state', (_req, res) => {
   res.json(agent.getState());
 });
 
+// ── Force evolution (testing / manual trigger) ────────────────────────────────
+
+/**
+ * POST /evolve
+ * Forces a personality evolution pass immediately.
+ * Returns { before, updates, after } for inspection.
+ */
+app.post('/evolve', async (_req, res) => {
+  try {
+    const result = await agent.forceEvolve();
+    res.json(result);
+  } catch (err) {
+    console.error('[POST /evolve]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {

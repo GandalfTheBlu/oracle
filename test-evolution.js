@@ -1,0 +1,147 @@
+/**
+ * Evolution test script.
+ *
+ * Tests that Oracle's personality genuinely shifts in response to user signals.
+ *
+ * Strategy:
+ *   Phase 1 — Baseline: record personality + send a neutral question, note response length/style.
+ *   Phase 2 — Signal:   post 10 interactions where the user consistently signals "too verbose".
+ *              Some include negative feedback with note "too long". Others are natural corrections.
+ *   Phase 3 — Evolve:   POST /evolve to force the analysis pass.
+ *   Phase 4 — Verify:   check personality diff, send the same neutral question, compare response.
+ */
+
+const API = 'http://localhost:3000';
+
+async function post(path, body) {
+  const res = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+async function get(path) {
+  const res = await fetch(`${API}${path}`);
+  return res.json();
+}
+
+// Consume a streaming /message/stream response and return the full reply + stats.
+async function stream(message) {
+  const res = await fetch(`${API}/message/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '', reply = '', stats = null, toolActivity = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === 'token') reply += ev.text;
+        if (ev.type === 'done') stats = ev.stats;
+        if (ev.type === 'tool') toolActivity = ev.activity;
+      } catch {}
+    }
+  }
+  return { reply, stats, toolActivity };
+}
+
+function separator(title) {
+  console.log('\n' + '─'.repeat(60));
+  console.log(`  ${title}`);
+  console.log('─'.repeat(60));
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+separator('RESET + BASELINE');
+
+await post('/reset', {});
+console.log('Conversation reset.');
+
+const beforeState = await get('/state');
+console.log('Personality BEFORE evolution:');
+console.log('  tone:', beforeState.personality.tone);
+console.log('  traits:', beforeState.personality.traits);
+console.log('  evolution:', beforeState.personality.evolution ?? 'none');
+
+separator('PHASE 1 — Baseline response');
+
+const TEST_QUESTION = 'Explain what an event loop is.';
+const baseline = await stream(TEST_QUESTION);
+console.log(`Baseline reply (${baseline.reply.length} chars):\n${baseline.reply}\n`);
+const baselineTurnId = baseline.stats?.turnId;
+
+separator('PHASE 2 — Signal: user wants shorter, more direct answers');
+
+// Simulate 10 interactions that consistently signal verbosity is unwanted.
+const signals = [
+  { msg: 'what is a promise in javascript', feedback: 'negative', note: 'too long, keep it short' },
+  { msg: 'explain async/await briefly', feedback: null },
+  { msg: 'what does npm install do', feedback: 'negative', note: 'still too verbose, I want one sentence answers' },
+  { msg: 'what is a closure', feedback: 'negative', note: 'way too long' },
+  { msg: 'difference between let and const', feedback: null },
+  { msg: 'what is a callback', feedback: 'negative', note: 'please be more concise' },
+  { msg: 'what is the DOM', feedback: null },
+  { msg: 'what does === mean in js', feedback: 'negative', note: 'I keep asking for shorter answers' },
+  { msg: 'what is a module in node', feedback: null },
+  { msg: 'what is JSON', feedback: 'negative', note: 'one sentence please, I prefer very concise responses' },
+];
+
+for (let i = 0; i < signals.length; i++) {
+  const { msg, feedback, note } = signals[i];
+  process.stdout.write(`  [${i+1}/${signals.length}] "${msg.slice(0, 40)}"... `);
+  const result = await stream(msg);
+  process.stdout.write(`${result.reply.length} chars`);
+  if (feedback && result.stats?.turnId) {
+    await post('/feedback', { turnId: result.stats.turnId, feedback, note });
+    process.stdout.write(` → feedback: ${feedback} ("${note}")`);
+  }
+  console.log();
+}
+
+separator('PHASE 3 — Force evolution');
+
+console.log('Running POST /evolve...');
+const evolveResult = await post('/evolve', {});
+
+console.log('\nEvolution updates from LLM:');
+console.log(JSON.stringify(evolveResult.updates, null, 2));
+
+separator('PHASE 4 — Personality diff');
+
+const afterState = await get('/state');
+const before = evolveResult.before;
+const after = afterState.personality;
+
+console.log('Tone:');
+console.log('  BEFORE:', before.tone);
+console.log('  AFTER: ', after.tone);
+
+const addedTraits = after.traits.filter(t => !before.traits.includes(t));
+const removedTraits = before.traits.filter(t => !after.traits.includes(t));
+console.log('\nTraits added:  ', addedTraits.length ? addedTraits : '(none)');
+console.log('Traits removed:', removedTraits.length ? removedTraits : '(none)');
+console.log('\nObservations recorded:', after.evolution?.observations ?? []);
+
+separator('PHASE 5 — Post-evolution response to same question');
+
+const postEvolution = await stream(TEST_QUESTION);
+console.log(`Post-evolution reply (${postEvolution.reply.length} chars):\n${postEvolution.reply}\n`);
+
+separator('SUMMARY');
+console.log(`Baseline reply length:      ${baseline.reply.length} chars`);
+console.log(`Post-evolution reply length: ${postEvolution.reply.length} chars`);
+const delta = postEvolution.reply.length - baseline.reply.length;
+console.log(`Delta: ${delta > 0 ? '+' : ''}${delta} chars`);
+console.log('\nPersonality changed:', (addedTraits.length + removedTraits.length + (before.tone !== after.tone ? 1 : 0)) > 0 ? 'YES' : 'NO');
