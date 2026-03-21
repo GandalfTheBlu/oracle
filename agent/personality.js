@@ -60,11 +60,16 @@ export function loadPersonality() {
     const raw = readFileSync(PERSONALITY_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     // Merge with defaults so new fields are picked up automatically.
-    return {
+    const personality = {
       ...DEFAULT_PERSONALITY,
       ...parsed,
       relationship: { ...DEFAULT_PERSONALITY.relationship, ...parsed.relationship },
     };
+    // Deduplicate observations in case parallel evolution runs wrote duplicates.
+    if (personality.evolution?.observations) {
+      personality.evolution.observations = [...new Set(personality.evolution.observations)];
+    }
+    return personality;
   } catch {
     console.warn('[personality] Failed to parse personality.json — using defaults.');
     return structuredClone(DEFAULT_PERSONALITY);

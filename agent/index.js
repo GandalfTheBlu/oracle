@@ -38,12 +38,26 @@ You remember the conversation and refer back to it naturally.`;
 /** Max tool execution rounds per turn (prevents infinite loops). */
 const MAX_TOOL_ROUNDS = 5;
 
+/** Patterns that signal the user wants to correct or retry the previous tool call. */
+const CORRECTION_PATTERNS = [
+  /\b(wrong|incorrect|that'?s not right|not right)\b/i,
+  /\b(retry|try again|try a different|different approach|try something else)\b/i,
+  /\bthat didn'?t work\b/i,
+  /\bnot what I (wanted|asked|meant|was looking for)\b/i,
+];
+
+function isCorrectionMessage(msg) {
+  return CORRECTION_PATTERNS.some(p => p.test(msg));
+}
+
 export class Agent {
   constructor() {
     /** @type {Array<{role: string, content: string}>} Full raw history */
     this.history = loadHistory();
     this.personality = loadPersonality();
     this.userModel = loadUserModel();
+    /** Tool activity from the most recent tool-using turn, for correction context. */
+    this.lastToolActivity = null;
   }
 
   /**
@@ -97,6 +111,17 @@ export class Agent {
       { role: 'system', content: fullSystemContent },
       ...contextMessages,
     ];
+
+    // If the user is correcting a previous tool call, inject context just before
+    // their message so the LLM retries with a different approach.
+    if (this.lastToolActivity?.length && isCorrectionMessage(userMessage)) {
+      const toolNames = [...new Set(this.lastToolActivity.map(a => a.tool))].join(', ');
+      // Append correction directive to the user's message — more reliable than
+      // a mid-conversation system message with some local models.
+      const lastMsg = workingMessages[workingMessages.length - 1];
+      lastMsg.content += `\n[Call ${toolNames} again now with the corrected arguments I just gave. Emit the tool call immediately — do not explain.]`;
+      console.log('[agent] Correction detected — appended retry directive to user message.');
+    }
 
     return { needsTools, contextMessages, workingMessages, memoriesInjected, internalReasoning };
   }
@@ -198,6 +223,8 @@ export class Agent {
       reply = stripToolCalls(workingMessages[workingMessages.length - 1]?.content || '');
     }
 
+    this.lastToolActivity = toolActivity.length ? toolActivity : null;
+
     const stats = this._finish(userMessage, reply, {
       contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
     });
@@ -266,6 +293,8 @@ export class Agent {
 
     if (!reply) reply = '(no response)';
 
+    this.lastToolActivity = toolActivity.length ? toolActivity : null;
+
     const stats = this._finish(userMessage, reply, {
       contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
     });
@@ -318,6 +347,7 @@ export class Agent {
 
   reset() {
     this.history = [];
+    this.lastToolActivity = null;
     saveHistory([]);
   }
 }

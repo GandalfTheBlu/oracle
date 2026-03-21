@@ -17,13 +17,31 @@
     }
 
     header {
-      padding: 1rem 1.5rem;
+      padding: 0.75rem 1.5rem;
       border-bottom: 1px solid #222;
       font-size: 1.1rem;
       font-weight: 600;
       letter-spacing: 0.08em;
       color: #7eb8f7;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
+
+    #reset-btn {
+      font-size: 0.75rem;
+      font-weight: 400;
+      letter-spacing: 0;
+      color: #555;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 5px;
+      padding: 0.25rem 0.65rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    #reset-btn:hover { color: #e07070; border-color: #e07070; }
 
     #log {
       flex: 1;
@@ -140,7 +158,10 @@
   </style>
 </head>
 <body>
-  <header>Oracle</header>
+  <header>
+    <span>Oracle</span>
+    <button id="reset-btn">reset</button>
+  </header>
   <div id="log"></div>
   <div id="input-row">
     <textarea id="input" placeholder="Say something…" rows="1"></textarea>
@@ -269,6 +290,17 @@
     sendBtn.addEventListener('click', send);
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', async () => {
+      if (!confirm('Reset conversation? This clears the current chat history.')) return;
+      try {
+        await fetch(`${API}/reset`, { method: 'POST' });
+        log.innerHTML = '';
+        addMsg('system', 'Conversation reset.');
+      } catch (e) {
+        addMsg('system', `Reset failed: ${e.message}`);
+      }
     });
   </script>
 </body>

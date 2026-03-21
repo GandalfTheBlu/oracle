@@ -91,11 +91,18 @@
 - [x] Tested: 10 "too verbose" signals → trait added ("keep responses 1-2 sentences"), trait removed, baseline length 622→384→291 chars across two passes
 - [x] test-evolution.js: full API-driven test harness (reset, signal, evolve, diff, compare)
 
-### Milestone 2.6 — Next
-- [ ] UI reset button + conversation export
-- [ ] Multi-turn tool correction: user can say "that was wrong" → Oracle retries with different args
-- [ ] Observation deduplication fix (rolling window has some duplicates from parallel evolution runs)
-- [ ] Proactive behaviour: Oracle can volunteer observations or suggestions unprompted
+### Milestone 2.6 — Polish + Correction ✅
+- [x] UI reset button in header (confirm dialog, clears log + calls POST /reset)
+- [x] Observation deduplication: deduplicate on personality load + new Set guard in applyEvolution
+- [x] Vectra topK bug fixed: queryItems ignores limit — now sort+filter+slice manually
+- [x] Multi-turn tool correction: CORRECTION_PATTERNS detect "wrong/retry/try again", append retry directive to user message, tool re-called with corrected args
+- [x] lastToolActivity tracked per turn, cleared on reset
+
+### Milestone 2.7 — Dev Tool Enhancements (planned)
+- [ ] File edit tool: replace old string → new string (more reliable than line numbers)
+- [ ] File chunk reading: read_file with offset+limit to handle large files without blowing context
+- [ ] Tree-sitter integration: code structure comprehension (list symbols, find definitions)
+- [ ] Tests for all of the above
 
 ---
 

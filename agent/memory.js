@@ -98,8 +98,12 @@ export async function retrieveMemories(query) {
   const vector = await embed(query);
   const results = await index.queryItems(vector, TOP_K);
 
+  // Vectra doesn't always honour the topK limit — enforce it manually.
+  // Sort by score descending, filter by min score, then take topK.
   return results
-    .filter(r => r.score >= MIN_SCORE)
+    .filter(r => typeof r.score === 'number' && !isNaN(r.score) && r.score >= MIN_SCORE)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, TOP_K)
     .map(r => ({
       text: r.item.metadata.text,
       type: r.item.metadata.type,
