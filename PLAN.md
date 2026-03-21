@@ -66,11 +66,17 @@
 - [x] Git tool: git status/log/diff/show/branch/commit etc. with blocked-ops list
 - [x] Tools prompt tightened (~40% token reduction)
 
-### Milestone 2.3 — Tool Reliability & UI (next)
-- [ ] Smarter tool invocation: detect when LLM answers without using a tool it should have used
-- [ ] Expose tools list and tool results in API response for UI display
-- [ ] UI: show tool calls/results inline in the chat (collapsible)
-- [ ] Context pressure: memory + personality + tools + history compete hard in 4096 tokens — measure and optimize
+### Milestone 2.3 — Context Optimization & UI ✅
+- [x] Memory: TOP_K 5→3, episodic format trimmed (200 chars/side), token drop 1897→1682 on "hi"
+- [x] Tools prompt: conditional injection — only when query contains tool-relevant keywords
+- [x] toolActivity returned in API response: [{tool, args, result}] per turn
+- [x] UI: tool calls shown as collapsible <details> blocks above assistant reply (green ⚙ header)
+
+### Milestone 2.4 — Next (ideas)
+- [ ] Streaming responses (SSE) — long tool results + LLM replies currently block until done
+- [ ] Oracle self-improvement: periodic review of learning log to update personality/behavior
+- [ ] More tools: web fetch, clipboard, calendar/reminders
+- [ ] Multi-turn tool correction: user can say "that was wrong" and Oracle retries with different args
 
 ---
 

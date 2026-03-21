@@ -23,7 +23,7 @@ const { serverHost, port } = config.embedding;
 const EMBED_URL = `http://${serverHost}:${port}/v1/embeddings`;
 
 /** Number of memories to retrieve per query. */
-const TOP_K = 5;
+const TOP_K = 3;
 
 /** Minimum similarity score to include a memory (0–1). */
 const MIN_SCORE = 0.3;
@@ -119,8 +119,10 @@ export async function retrieveMemories(query) {
  * @returns {Promise<void>}
  */
 export async function extractAndStore(userMessage, assistantReply, llmCall) {
-  // Always store the exchange as episodic memory.
-  const episodic = `User said: "${userMessage}" — Oracle replied: "${assistantReply}"`;
+  // Store a compact episodic memory (trimmed to 200 chars each side to control token cost).
+  const uSnip = userMessage.slice(0, 200);
+  const aSnip = assistantReply.slice(0, 200);
+  const episodic = `User: "${uSnip}" → Oracle: "${aSnip}"`;
   await storeMemory(episodic, 'episodic');
 
   // Ask the LLM to extract semantic facts (user preferences, stated facts, etc.).

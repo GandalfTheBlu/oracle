@@ -28,9 +28,28 @@ export const TOOLS = {
   git,
 };
 
+/** Keywords that suggest a tools-capable query. */
+const TOOL_KEYWORDS = [
+  'file', 'files', 'read', 'write', 'open', 'create', 'edit', 'directory', 'folder',
+  'run', 'execute', 'command', 'shell', 'script', 'install',
+  'git', 'commit', 'branch', 'diff', 'status', 'log',
+  'search', 'find', 'grep', 'look for',
+  'code', 'function', 'class', 'import', 'export', 'module',
+  'list', 'show me', 'check',
+];
+
+/**
+ * Returns true if the query likely needs tool use.
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function queryNeedsTools(query) {
+  const q = query.toLowerCase();
+  return TOOL_KEYWORDS.some(kw => q.includes(kw));
+}
+
 /**
  * Build the tool usage instructions injected into the system prompt.
- * Kept concise to save tokens.
  * @returns {string}
  */
 export function buildToolsPrompt() {

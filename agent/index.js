@@ -23,6 +23,7 @@ import { reason } from './reasoning.js';
 import { logInteraction, recordFeedback, getLearningStats } from './learning.js';
 import {
   buildToolsPrompt,
+  queryNeedsTools,
   extractToolCalls,
   stripToolCalls,
   executeToolCalls,
@@ -56,12 +57,13 @@ export class Agent {
     // Update relationship state.
     recordInteraction(this.personality);
 
-    // Build dynamic system prompt.
+    // Build dynamic system prompt — only inject tools section when relevant.
+    const needsTools = queryNeedsTools(userMessage);
     const systemPrompt =
       BASE_SYSTEM_PROMPT +
       buildPersonalityPrompt(this.personality) +
       buildUserModelPrompt(this.userModel) +
-      buildToolsPrompt();
+      (needsTools ? buildToolsPrompt() : '');
 
     // Retrieve relevant memories.
     let memoryBlock = '';
@@ -98,6 +100,8 @@ export class Agent {
     // ── Tool execution loop ───────────────────────────────────────────────────
     let toolsUsed = [];
     let toolErrors = [];
+    /** @type {Array<{tool: string, args: object, result: string}>} */
+    let toolActivity = [];
     let reply = '';
 
     // Build the working message list for this turn (may grow with tool results).
@@ -121,6 +125,17 @@ export class Agent {
       const { output: toolResults, errors: roundErrors } = await executeToolCalls(calls);
       if (roundErrors.length) toolErrors.push(...roundErrors);
       console.log(`[agent] Tool round ${round + 1}: ${calls.map(c => c.name).join(', ')}`);
+
+      // Record activity for the API response.
+      // Re-parse results to pair each call with its output.
+      const resultBlocks = toolResults.split('\n\n');
+      calls.forEach((call, i) => {
+        toolActivity.push({
+          tool: call.name,
+          args: call.args,
+          result: (resultBlocks[i] || '').replace(/^\[tool: [^\]]+\]\n/, ''),
+        });
+      });
 
       // Append the assistant's tool-call message and the results.
       workingMessages.push({ role: 'assistant', content: raw });
@@ -178,7 +193,12 @@ export class Agent {
       toolErrors: toolErrors.length ? toolErrors : undefined,
     };
 
-    return { reply, history: this.getHistory(), contextStats: stats };
+    return {
+      reply,
+      history: this.getHistory(),
+      contextStats: stats,
+      toolActivity: toolActivity.length ? toolActivity : undefined,
+    };
   }
 
   /**

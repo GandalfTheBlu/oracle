@@ -64,6 +64,43 @@
       background: none;
     }
 
+    .tool-block {
+      align-self: flex-start;
+      font-size: 0.78rem;
+      width: 100%;
+      max-width: 90%;
+    }
+
+    .tool-block details {
+      background: #111;
+      border: 1px solid #1e3a1e;
+      border-radius: 6px;
+      margin-bottom: 4px;
+    }
+
+    .tool-block summary {
+      padding: 0.3rem 0.7rem;
+      cursor: pointer;
+      color: #5db85d;
+      user-select: none;
+      list-style: none;
+    }
+
+    .tool-block summary::before { content: '⚙ '; }
+
+    .tool-block pre {
+      padding: 0.5rem 0.7rem;
+      color: #aaa;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 0;
+      border-top: 1px solid #1e3a1e;
+      font-size: 0.75rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
     #input-row {
       display: flex;
       gap: 0.5rem;
@@ -125,6 +162,25 @@
       return div;
     }
 
+    function addToolActivity(activity) {
+      if (!activity || activity.length === 0) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tool-block';
+      for (const { tool, args, result } of activity) {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        const argsStr = Object.entries(args || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ');
+        summary.textContent = `${tool}(${argsStr})`;
+        const pre = document.createElement('pre');
+        pre.textContent = result || '(no output)';
+        details.appendChild(summary);
+        details.appendChild(pre);
+        wrapper.appendChild(details);
+      }
+      log.appendChild(wrapper);
+      log.scrollTop = log.scrollHeight;
+    }
+
     async function send() {
       const text = input.value.trim();
       if (!text) return;
@@ -143,6 +199,7 @@
         const data = await res.json();
         thinking.remove();
         if (data.reply) {
+          if (data.toolActivity) addToolActivity(data.toolActivity);
           addMsg('assistant', data.reply);
         } else {
           addMsg('system', `Error: ${data.error || 'Unknown error'}`);
