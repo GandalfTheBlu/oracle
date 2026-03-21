@@ -1,0 +1,32 @@
+{
+  "llm": {
+    "serverHost": "192.168.0.208",
+    "port": 8080,
+    "binary": "C:\\llama_cpp\\bin\\llama-server.exe",
+    "model": "C:\\llama_cpp\\models\\qwen2.5-coder-14b-instruct-q6_k.gguf",
+    "contextSize": 4096,
+    "extraArgs": "--jinja"
+  },
+  "embedding": {
+    "serverHost": "192.168.0.208",
+    "port": 8081,
+    "binary": "C:\\llama_cpp\\bin\\llama-server.exe",
+    "model": "C:\\llama_cpp\\models\\nomic-embed-text-v1.5.Q8_0.gguf",
+    "contextSize": 512
+  },
+  "vision": {
+    "serverHost": "192.168.0.208",
+    "port": 8082,
+    "model": "C:\\llama_cpp\\models\\Qwen_Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+    "mmproj": "C:\\llama_cpp\\models\\mmproj-Qwen_Qwen2.5-VL-7B-Instruct-bf16.gguf"
+  },
+  "imageGen": {
+    "serverHost": "192.168.0.208",
+    "port": 8188,
+    "comfyUIPath": "C:\\ComfyUI",
+    "unet": "flux1-schnell-Q4_K_S.gguf",
+    "vae": "ae.safetensors",
+    "clipL": "clip_l.safetensors",
+    "t5": "t5xxl_fp8_e4m3fn.safetensors"
+  }
+}
