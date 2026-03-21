@@ -64,6 +64,22 @@ app.post('/reset', (_req, res) => {
   res.json({ status: 'ok', message: 'Conversation reset.' });
 });
 
+// ── Feedback ──────────────────────────────────────────────────────────────────
+
+/**
+ * POST /feedback
+ * Body: { "turnId": "...", "feedback": "positive"|"negative", "note": "..." }
+ */
+app.post('/feedback', (req, res) => {
+  const { turnId, feedback, note } = req.body;
+  if (!turnId || !['positive', 'negative'].includes(feedback)) {
+    return res.status(400).json({ error: 'turnId and feedback ("positive"|"negative") are required' });
+  }
+  const ok = agent.feedback(turnId, feedback, note || '');
+  if (!ok) return res.status(404).json({ error: `Turn ${turnId} not found` });
+  res.json({ status: 'ok' });
+});
+
 // ── State inspection ──────────────────────────────────────────────────────────
 
 /**

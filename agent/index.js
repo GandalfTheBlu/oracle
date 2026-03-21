@@ -1,6 +1,6 @@
 /**
  * Oracle Agent — core intelligence layer.
- * Milestone 1.4: personality system + user model.
+ * Milestone 1.5: multi-step reasoning + learning/feedback.
  */
 
 import { chatCompletion } from './llm.js';
@@ -19,6 +19,8 @@ import {
   updateUserModel,
   buildUserModelPrompt,
 } from './usermodel.js';
+import { reason } from './reasoning.js';
+import { logInteraction, recordFeedback, getLearningStats } from './learning.js';
 
 const BASE_SYSTEM_PROMPT = `You are Oracle, a personal AI assistant in the spirit of JARVIS from Iron Man. \
 You are thoughtful, direct, and develop a genuine rapport with the user over time. \
@@ -69,8 +71,23 @@ export class Agent {
     // Build context-safe message list (compacts if over budget).
     const contextMessages = await buildContext(this.history, systemPrompt, userMessage);
 
+    const fullSystemContent = systemPrompt + memoryBlock;
+
+    // ── Internal reasoning pass ───────────────────────────────────────────────
+    let internalReasoning = '';
+    try {
+      internalReasoning = await reason(userMessage, fullSystemContent, contextMessages);
+    } catch (err) {
+      console.warn('[agent] Reasoning pass failed:', err.message);
+    }
+
+    // ── Final reply ───────────────────────────────────────────────────────────
+    const reasoningNote = internalReasoning
+      ? `\n\n[Your internal reasoning for this response]: ${internalReasoning}\nNow give your actual reply:`
+      : '';
+
     const messages = [
-      { role: 'system', content: systemPrompt + memoryBlock },
+      { role: 'system', content: fullSystemContent + reasoningNote },
       ...contextMessages,
     ];
 
@@ -83,6 +100,20 @@ export class Agent {
     saveHistory(this.history);
     savePersonality(this.personality);
 
+    // Log the interaction.
+    const turnId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    logInteraction({
+      id: turnId,
+      userMessage,
+      reply,
+      reasoning: internalReasoning,
+      contextStats: {
+        totalMessages: this.history.length,
+        contextMessages: contextMessages.length,
+        memoriesInjected,
+      },
+    });
+
     // Background: extract memories + update user model.
     Promise.all([
       extractAndStore(userMessage, reply, chatCompletion),
@@ -92,15 +123,28 @@ export class Agent {
     ]).catch(err => console.warn('[agent] Background update failed:', err.message));
 
     const stats = {
+      turnId,
       totalMessages: this.history.length,
       contextMessages: contextMessages.length,
       estimatedContextTokens: estimateMessagesTokens(messages),
       memoriesInjected,
       familiarity: this.personality.relationship.familiarity,
       interactionCount: this.personality.relationship.interactionCount,
+      hasReasoning: !!internalReasoning,
     };
 
     return { reply, history: this.getHistory(), contextStats: stats };
+  }
+
+  /**
+   * Record explicit feedback on a past turn.
+   * @param {string} turnId
+   * @param {'positive'|'negative'} feedback
+   * @param {string} [note]
+   * @returns {boolean}
+   */
+  feedback(turnId, feedback, note = '') {
+    return recordFeedback(turnId, feedback, note);
   }
 
   /**
@@ -117,12 +161,13 @@ export class Agent {
     return {
       personality: this.personality,
       userModel: this.userModel,
+      learning: getLearningStats(),
     };
   }
 
   /**
    * Clear the conversation history (in-memory and on disk).
-   * Does NOT reset personality or user model — those persist across sessions.
+   * Does NOT reset personality, user model, or learning log.
    */
   reset() {
     this.history = [];

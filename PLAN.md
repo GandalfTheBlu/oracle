@@ -38,10 +38,11 @@
 - [x] GET /state endpoint for inspection
 - [x] User model updated via LLM extraction after each turn (background)
 
-### Milestone 1.5 — Learning & Reasoning
-- [ ] Multi-step reasoning: internal scratchpad before final response
-- [ ] Success/failure logging
-- [ ] Feedback mechanism to adjust behavior
+### Milestone 1.5 — Learning & Reasoning ✅
+- [x] Multi-step reasoning: internal scratchpad before final response (reason() call, not shown to user)
+- [x] Success/failure logging — data/learning.jsonl, turnId returned per response
+- [x] Feedback mechanism: POST /feedback with turnId + "positive"/"negative"
+- [x] getLearningStats() exposed via GET /state
 
 ### Milestone 1.6 — Web UI (basic)
 - [ ] HTML/CSS/JS chat interface
