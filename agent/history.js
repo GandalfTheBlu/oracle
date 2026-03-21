@@ -4,11 +4,10 @@
  */
 
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
-const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
-const DATA_DIR = join(ROOT, 'data');
+import { getDataDir } from './data-dir.js';
+const DATA_DIR = getDataDir();
 const HISTORY_FILE = join(DATA_DIR, 'history.json');
 const HISTORY_TMP = join(DATA_DIR, 'history.json.tmp');
 

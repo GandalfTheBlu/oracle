@@ -128,6 +128,76 @@ app.get('/state', (_req, res) => {
   res.json(agent.getState());
 });
 
+// ── Memory management ─────────────────────────────────────────────────────────
+
+/**
+ * GET /memory?type=episodic|semantic
+ * List all memories. Optional ?type filter.
+ */
+app.get('/memory', async (req, res) => {
+  try {
+    const { type } = req.query;
+    const memories = await agent.listMemories(type || null);
+    res.json({ memories, total: memories.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /memory/:id
+ * Get a specific memory by ID.
+ */
+app.get('/memory/:id', async (req, res) => {
+  try {
+    const memory = await agent.getMemory(req.params.id);
+    if (!memory) return res.status(404).json({ error: 'Memory not found' });
+    res.json(memory);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /memory/:id
+ * Delete a specific memory by ID.
+ */
+app.delete('/memory/:id', async (req, res) => {
+  try {
+    const deleted = await agent.deleteMemory(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Memory not found' });
+    res.json({ status: 'ok', deleted: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /memory
+ * Clear all memories.
+ */
+app.delete('/memory', async (_req, res) => {
+  try {
+    const count = await agent.clearMemories();
+    res.json({ status: 'ok', deleted: count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /reset/full
+ * Wipe everything: history, memories, personality, user model, learning log.
+ */
+app.post('/reset/full', async (_req, res) => {
+  try {
+    const result = await agent.fullReset();
+    res.json({ status: 'ok', ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Force evolution (testing / manual trigger) ────────────────────────────────
 
 /**

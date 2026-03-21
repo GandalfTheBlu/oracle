@@ -29,6 +29,12 @@ import {
   stripToolCalls,
   executeToolCalls,
 } from './tools/index.js';
+import {
+  listMemories,
+  getMemory,
+  deleteMemory,
+  clearMemories,
+} from './memory.js';
 
 const BASE_SYSTEM_PROMPT = `You are Oracle, a personal AI assistant in the spirit of JARVIS from Iron Man. \
 You are thoughtful, direct, and develop a genuine rapport with the user over time. \
@@ -350,4 +356,46 @@ export class Agent {
     this.lastToolActivity = null;
     saveHistory([]);
   }
+
+  /**
+   * Full reset: wipe conversation history, all memories, personality back to
+   * defaults, user model, and learning log. Leaves web cache intact.
+   */
+  async fullReset() {
+    // Clear history
+    this.history = [];
+    this.lastToolActivity = null;
+    saveHistory([]);
+
+    // Clear vector memories
+    const memoriesDeleted = await clearMemories();
+
+    // Reset personality to defaults (reload triggers default path)
+    this.personality = loadPersonality.__defaultPersonality
+      ? structuredClone(loadPersonality.__defaultPersonality)
+      : loadPersonality(); // will fall back to defaults since file won't exist
+    // Wipe the files
+    const { writeFileSync, existsSync, unlinkSync } = await import('fs');
+    const { getDataDir } = await import('./data-dir.js');
+    const { join } = await import('path');
+    const dataDir = getDataDir();
+    const filesToWipe = ['personality.json', 'usermodel.json', 'learning.jsonl'];
+    for (const f of filesToWipe) {
+      const p = join(dataDir, f);
+      if (existsSync(p)) unlinkSync(p);
+    }
+
+    // Reload fresh state
+    this.personality = loadPersonality();
+    this.userModel = loadUserModel();
+
+    return { memoriesDeleted, filesWiped: filesToWipe };
+  }
+
+  // ── Memory management pass-throughs ──────────────────────────────────────────
+
+  listMemories(type) { return listMemories(type); }
+  getMemory(id)      { return getMemory(id); }
+  deleteMemory(id)   { return deleteMemory(id); }
+  clearMemories()    { return clearMemories(); }
 }

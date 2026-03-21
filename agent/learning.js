@@ -9,10 +9,9 @@
 
 import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
 
-const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
-const DATA_DIR = join(ROOT, 'data');
+import { getDataDir } from './data-dir.js';
+const DATA_DIR = getDataDir();
 const LEARNING_FILE = join(DATA_DIR, 'learning.jsonl');
 
 function ensureDataDir() {

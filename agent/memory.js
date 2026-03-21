@@ -11,13 +11,13 @@
 
 import { LocalIndex } from 'vectra';
 import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { rmSync, existsSync } from 'fs';
 import config from '../config.json' with { type: 'json' };
+import { getDataDir } from './data-dir.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
-const INDEX_PATH = join(ROOT, 'data', 'memory');
+const INDEX_PATH = join(getDataDir(), 'memory');
 
 const { serverHost, port } = config.embedding;
 const EMBED_URL = `http://${serverHost}:${port}/v1/embeddings`;
@@ -169,4 +169,73 @@ export async function extractAndStore(userMessage, assistantReply, llmCall) {
   } catch (err) {
     console.warn('[memory] Semantic extraction failed:', err.message);
   }
+}
+
+// ── Memory management ─────────────────────────────────────────────────────────
+
+/**
+ * List all stored memories (without their vectors).
+ * @param {'episodic'|'semantic'|null} [type]  Optionally filter by type.
+ * @returns {Promise<Array<{id, text, type, timestamp}>>}
+ */
+export async function listMemories(type = null) {
+  const index = await getIndex();
+  const items = await index.listItems();
+  return items
+    .filter(item => !type || item.metadata?.type === type)
+    .map(item => ({
+      id: item.id,
+      text: item.metadata?.text ?? '',
+      type: item.metadata?.type ?? 'unknown',
+      timestamp: item.metadata?.timestamp ?? null,
+    }))
+    .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));
+}
+
+/**
+ * Get a single memory by ID.
+ * @param {string} id
+ * @returns {Promise<{id, text, type, timestamp}|null>}
+ */
+export async function getMemory(id) {
+  const index = await getIndex();
+  const item = await index.getItem(id);
+  if (!item) return null;
+  return {
+    id: item.id,
+    text: item.metadata?.text ?? '',
+    type: item.metadata?.type ?? 'unknown',
+    timestamp: item.metadata?.timestamp ?? null,
+  };
+}
+
+/**
+ * Delete a single memory by ID.
+ * @param {string} id
+ * @returns {Promise<boolean>} true if deleted, false if not found.
+ */
+export async function deleteMemory(id) {
+  const index = await getIndex();
+  const item = await index.getItem(id);
+  if (!item) return false;
+  await index.deleteItem(id);
+  return true;
+}
+
+/**
+ * Delete all memories and recreate a fresh index.
+ * @returns {Promise<number>} Number of items deleted.
+ */
+export async function clearMemories() {
+  const index = await getIndex();
+  const stats = await index.getIndexStats();
+  const count = stats.items;
+
+  // Wipe the index folder and reset the singleton.
+  if (existsSync(INDEX_PATH)) {
+    rmSync(INDEX_PATH, { recursive: true, force: true });
+  }
+  _index = null;
+  await getIndex(); // recreate fresh index
+  return count;
 }

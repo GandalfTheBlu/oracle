@@ -155,14 +155,180 @@
 
     #send:hover { background: #1e4a78; }
     #send:disabled { opacity: 0.5; cursor: default; }
+
+    /* Memory panel */
+    #memory-btn {
+      font-size: 0.75rem;
+      font-weight: 400;
+      letter-spacing: 0;
+      color: #555;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 5px;
+      padding: 0.25rem 0.65rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #memory-btn:hover { color: #7eb8f7; border-color: #7eb8f7; }
+
+    #memory-panel {
+      display: none;
+      position: fixed;
+      top: 0; right: 0;
+      width: 380px;
+      height: 100vh;
+      background: #0f0f0f;
+      border-left: 1px solid #222;
+      flex-direction: column;
+      z-index: 100;
+    }
+    #memory-panel.open { display: flex; }
+
+    #memory-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #222;
+      font-size: 0.85rem;
+      color: #7eb8f7;
+      font-weight: 600;
+    }
+
+    #memory-panel-header .actions {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .mem-action-btn {
+      font-size: 0.72rem;
+      color: #555;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .mem-action-btn:hover { color: #e07070; border-color: #e07070; }
+    #mem-close-btn:hover { color: #aaa; border-color: #aaa; }
+
+    #memory-filter {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .filter-btn {
+      font-size: 0.72rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      border: 1px solid #333;
+      background: none;
+      color: #555;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-btn.active { color: #7eb8f7; border-color: #7eb8f7; }
+
+    #memory-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem;
+    }
+
+    .memory-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      border: 1px solid #1a1a1a;
+      background: #111;
+      font-size: 0.78rem;
+    }
+    .memory-item:hover { border-color: #2a2a2a; }
+
+    .memory-item .mem-body { flex: 1; min-width: 0; }
+
+    .mem-type {
+      font-size: 0.68rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .mem-type.episodic { background: #1a2a4a; color: #7eb8f7; }
+    .mem-type.semantic { background: #1a3a1a; color: #5db85d; }
+    .mem-type.unknown  { background: #2a2a2a; color: #888; }
+
+    .mem-text {
+      color: #bbb;
+      margin-top: 0.2rem;
+      line-height: 1.4;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+
+    .mem-meta {
+      color: #444;
+      font-size: 0.68rem;
+      margin-top: 0.2rem;
+    }
+
+    .mem-del-btn {
+      background: none;
+      border: none;
+      color: #333;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 0 0.2rem;
+      flex-shrink: 0;
+      transition: color 0.15s;
+    }
+    .mem-del-btn:hover { color: #e07070; }
+
+    #memory-empty {
+      color: #444;
+      font-size: 0.8rem;
+      text-align: center;
+      margin-top: 2rem;
+      display: none;
+    }
   </style>
 </head>
 <body>
   <header>
     <span>Oracle</span>
-    <button id="reset-btn">reset</button>
+    <div style="display:flex;gap:0.5rem">
+      <button id="memory-btn">memory</button>
+      <button id="reset-btn">reset</button>
+    </div>
   </header>
   <div id="log"></div>
+
+  <!-- Memory Panel -->
+  <div id="memory-panel">
+    <div id="memory-panel-header">
+      <span>Memory</span>
+      <div class="actions">
+        <button class="mem-action-btn" id="mem-refresh-btn">refresh</button>
+        <button class="mem-action-btn" id="mem-clear-btn">clear all</button>
+        <button class="mem-action-btn" id="mem-close-btn">✕</button>
+      </div>
+    </div>
+    <div id="memory-filter">
+      <button class="filter-btn active" data-type="">all</button>
+      <button class="filter-btn" data-type="episodic">episodic</button>
+      <button class="filter-btn" data-type="semantic">semantic</button>
+    </div>
+    <div id="memory-list"></div>
+    <div id="memory-empty">No memories stored.</div>
+  </div>
   <div id="input-row">
     <textarea id="input" placeholder="Say something…" rows="1"></textarea>
     <button id="send">Send</button>
@@ -301,6 +467,102 @@
       } catch (e) {
         addMsg('system', `Reset failed: ${e.message}`);
       }
+    });
+
+    // ── Memory panel ──────────────────────────────────────────────────────────
+
+    const memoryPanel = document.getElementById('memory-panel');
+    const memoryList  = document.getElementById('memory-list');
+    const memoryEmpty = document.getElementById('memory-empty');
+    let memFilter = '';
+
+    function formatDate(iso) {
+      if (!iso) return '';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch { return iso; }
+    }
+
+    async function loadMemories() {
+      memoryList.innerHTML = '';
+      memoryEmpty.style.display = 'none';
+      try {
+        const url = memFilter ? `${API}/memory?type=${memFilter}` : `${API}/memory`;
+        const data = await fetch(url).then(r => r.json());
+        const memories = data.memories || [];
+        if (memories.length === 0) {
+          memoryEmpty.style.display = 'block';
+          return;
+        }
+        // Show newest first
+        [...memories].reverse().forEach(mem => {
+          const item = document.createElement('div');
+          item.className = 'memory-item';
+          item.dataset.id = mem.id;
+
+          const typeClass = ['episodic', 'semantic'].includes(mem.type) ? mem.type : 'unknown';
+          item.innerHTML = `
+            <div class="mem-body">
+              <span class="mem-type ${typeClass}">${mem.type}</span>
+              <div class="mem-text">${escHtml(mem.text)}</div>
+              <div class="mem-meta">${formatDate(mem.timestamp)}</div>
+            </div>
+            <button class="mem-del-btn" title="Delete">×</button>
+          `;
+          item.querySelector('.mem-del-btn').addEventListener('click', () => deleteMemory(mem.id, item));
+          memoryList.appendChild(item);
+        });
+      } catch (e) {
+        memoryEmpty.textContent = `Error loading memories: ${e.message}`;
+        memoryEmpty.style.display = 'block';
+      }
+    }
+
+    async function deleteMemory(id, itemEl) {
+      try {
+        const res = await fetch(`${API}/memory/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (res.ok) {
+          itemEl.remove();
+          if (memoryList.children.length === 0) memoryEmpty.style.display = 'block';
+        }
+      } catch (e) {
+        addMsg('system', `Delete failed: ${e.message}`);
+      }
+    }
+
+    function escHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    document.getElementById('memory-btn').addEventListener('click', () => {
+      memoryPanel.classList.add('open');
+      loadMemories();
+    });
+
+    document.getElementById('mem-close-btn').addEventListener('click', () => {
+      memoryPanel.classList.remove('open');
+    });
+
+    document.getElementById('mem-refresh-btn').addEventListener('click', loadMemories);
+
+    document.getElementById('mem-clear-btn').addEventListener('click', async () => {
+      if (!confirm('Delete ALL memories? This cannot be undone.')) return;
+      try {
+        await fetch(`${API}/memory`, { method: 'DELETE' });
+        await loadMemories();
+      } catch (e) {
+        addMsg('system', `Clear failed: ${e.message}`);
+      }
+    });
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        memFilter = btn.dataset.type;
+        loadMemories();
+      });
     });
   </script>
 </body>
