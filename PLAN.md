@@ -1,22 +1,25 @@
 # Oracle — Plan
 
 ## Current Status
-**Phase:** Project setup. Nothing built yet.
-**Last session:** Initial vision captured. Remote repo connected. Autopilot configured.
+**Phase:** Phase 1 — Foundation
+**Last session:** Milestone 1.1 complete. Agent API running, LLM responding end-to-end.
 
 ---
 
 ## Phase 1 — Foundation (Goal 1: Reasoning, Memory, Personality)
 
-### Milestone 1.1 — Skeleton ✅ (next)
-- [ ] Project structure: `agent/`, `api/`, `ui/`
-- [ ] `package.json` with dependencies
-- [ ] Basic Agent API server (Express or similar) — health check endpoint
-- [ ] Stub agent class wired to text LLM endpoint
-- [ ] POST /message → returns LLM response (no memory yet)
-- [ ] Verify Claude Code can call the API and get a response
+### Milestone 1.1 — Skeleton ✅
+- [x] Project structure: `agent/`, `api/`, `ui/`
+- [x] `package.json` with Express + cors dependencies
+- [x] Basic Agent API server — GET /health, POST /message, GET /history, POST /reset
+- [x] Stub Agent class with in-memory conversation history, wired to LLM endpoint
+- [x] POST /message → returns LLM response and full history
+- [x] Verified: Claude Code called the API and received a real LLM response
+
+### Milestone 1.2 — Conversation & Context (next)
 
 ### Milestone 1.2 — Conversation & Context
+- [ ] Persist conversation history to disk (JSON) so it survives restarts
 - [ ] Conversation history management (in-memory, then persistent)
 - [ ] Context window tracking (token estimation)
 - [ ] Summarization-based compaction when context exceeds threshold
