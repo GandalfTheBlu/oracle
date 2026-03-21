@@ -1,9 +1,9 @@
 /**
  * Oracle Agent — core intelligence layer.
- * Milestone 2.1: tool integrations (file read/write, shell, search).
+ * Milestone 2.4: streaming responses + web fetch tool.
  */
 
-import { chatCompletion } from './llm.js';
+import { chatCompletion, chatCompletionStream } from './llm.js';
 import { loadHistory, saveHistory } from './history.js';
 import { buildContext, estimateMessagesTokens } from './context.js';
 import { retrieveMemories, extractAndStore } from './memory.js';
@@ -46,18 +46,13 @@ export class Agent {
   }
 
   /**
-   * Process a user message and return the agent's response.
-   * @param {string} userMessage
-   * @returns {Promise<{reply: string, history: Array, contextStats: object}>}
+   * Shared turn preparation: builds system prompt, context, memories, reasoning.
+   * @private
    */
-  async chat(userMessage) {
-    // Append user turn.
+  async _prepare(userMessage) {
     this.history.push({ role: 'user', content: userMessage });
-
-    // Update relationship state.
     recordInteraction(this.personality);
 
-    // Build dynamic system prompt — only inject tools section when relevant.
     const needsTools = queryNeedsTools(userMessage);
     const systemPrompt =
       BASE_SYSTEM_PROMPT +
@@ -65,7 +60,6 @@ export class Agent {
       buildUserModelPrompt(this.userModel) +
       (needsTools ? buildToolsPrompt() : '');
 
-    // Retrieve relevant memories.
     let memoryBlock = '';
     let memoriesInjected = 0;
     try {
@@ -80,15 +74,12 @@ export class Agent {
       console.warn('[agent] Memory retrieval failed:', err.message);
     }
 
-    // Build context-safe message list.
-    const contextMessages = await buildContext(this.history, systemPrompt, userMessage);
+    // Build a preliminary context to feed the reasoning pass.
+    const prelimContextMessages = await buildContext(this.history, systemPrompt + memoryBlock, userMessage);
 
-    const fullSystemContent = systemPrompt + memoryBlock;
-
-    // ── Internal reasoning pass ───────────────────────────────────────────────
     let internalReasoning = '';
     try {
-      internalReasoning = await reason(userMessage, fullSystemContent, contextMessages);
+      internalReasoning = await reason(userMessage, systemPrompt + memoryBlock, prelimContextMessages);
     } catch (err) {
       console.warn('[agent] Reasoning pass failed:', err.message);
     }
@@ -97,67 +88,27 @@ export class Agent {
       ? `\n\n[Your internal reasoning]: ${internalReasoning}\nNow give your actual reply:`
       : '';
 
-    // ── Tool execution loop ───────────────────────────────────────────────────
-    let toolsUsed = [];
-    let toolErrors = [];
-    /** @type {Array<{tool: string, args: object, result: string}>} */
-    let toolActivity = [];
-    let reply = '';
+    // Build final context using the complete system content so the token budget is accurate.
+    const fullSystemContent = systemPrompt + memoryBlock + reasoningNote;
+    const contextMessages = await buildContext(this.history, fullSystemContent, userMessage);
 
-    // Build the working message list for this turn (may grow with tool results).
     const workingMessages = [
-      { role: 'system', content: fullSystemContent + reasoningNote },
+      { role: 'system', content: fullSystemContent },
       ...contextMessages,
     ];
 
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const raw = await chatCompletion(workingMessages, { maxTokens: 1024 });
-      const calls = extractToolCalls(raw);
+    return { needsTools, contextMessages, workingMessages, memoriesInjected, internalReasoning };
+  }
 
-      if (calls.length === 0) {
-        // No tool calls — this is the final reply.
-        reply = stripToolCalls(raw);
-        break;
-      }
-
-      // Execute tools and feed results back.
-      toolsUsed.push(...calls.map(c => c.name));
-      const { output: toolResults, errors: roundErrors } = await executeToolCalls(calls);
-      if (roundErrors.length) toolErrors.push(...roundErrors);
-      console.log(`[agent] Tool round ${round + 1}: ${calls.map(c => c.name).join(', ')}`);
-
-      // Record activity for the API response.
-      // Re-parse results to pair each call with its output.
-      const resultBlocks = toolResults.split('\n\n');
-      calls.forEach((call, i) => {
-        toolActivity.push({
-          tool: call.name,
-          args: call.args,
-          result: (resultBlocks[i] || '').replace(/^\[tool: [^\]]+\]\n/, ''),
-        });
-      });
-
-      // Append the assistant's tool-call message and the results.
-      workingMessages.push({ role: 'assistant', content: raw });
-      workingMessages.push({
-        role: 'user',
-        content: `[Tool results]:\n${toolResults}\n\nNow give your final response to the user based on these results.`,
-      });
-    }
-
-    if (!reply) {
-      // Exhausted rounds — use last raw output stripped of any tool tags.
-      reply = stripToolCalls(workingMessages[workingMessages.length - 1]?.content || '');
-    }
-
-    // Append assistant turn to full history.
+  /**
+   * Shared post-turn bookkeeping: save history, log interaction, background updates.
+   * @private
+   */
+  _finish(userMessage, reply, { contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors }) {
     this.history.push({ role: 'assistant', content: reply });
-
-    // Persist history and personality.
     saveHistory(this.history);
     savePersonality(this.personality);
 
-    // Log the interaction.
     const turnId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     logInteraction({
       id: turnId,
@@ -172,7 +123,6 @@ export class Agent {
       },
     });
 
-    // Background: extract memories + update user model.
     Promise.all([
       extractAndStore(userMessage, reply, chatCompletion),
       updateUserModel(this.userModel, userMessage, reply, chatCompletion).then(() =>
@@ -180,7 +130,7 @@ export class Agent {
       ),
     ]).catch(err => console.warn('[agent] Background update failed:', err.message));
 
-    const stats = {
+    return {
       turnId,
       totalMessages: this.history.length,
       contextMessages: contextMessages.length,
@@ -192,6 +142,63 @@ export class Agent {
       toolsUsed,
       toolErrors: toolErrors.length ? toolErrors : undefined,
     };
+  }
+
+  /**
+   * Run the tool execution loop (blocking). Returns reply if the loop produced one,
+   * or null if all rounds used tools (caller should stream the final reply).
+   * @private
+   */
+  async _runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity) {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const raw = await chatCompletion(workingMessages, { maxTokens: 1024 });
+      const calls = extractToolCalls(raw);
+
+      if (calls.length === 0) {
+        return stripToolCalls(raw);
+      }
+
+      toolsUsed.push(...calls.map(c => c.name));
+      const { output: toolResults, errors: roundErrors } = await executeToolCalls(calls);
+      if (roundErrors.length) toolErrors.push(...roundErrors);
+      console.log(`[agent] Tool round ${round + 1}: ${calls.map(c => c.name).join(', ')}`);
+
+      const resultBlocks = toolResults.split('\n\n');
+      calls.forEach((call, i) => {
+        toolActivity.push({
+          tool: call.name,
+          args: call.args,
+          result: (resultBlocks[i] || '').replace(/^\[tool: [^\]]+\]\n/, ''),
+        });
+      });
+
+      workingMessages.push({ role: 'assistant', content: raw });
+      workingMessages.push({
+        role: 'user',
+        content: `[Tool results]:\n${toolResults}\n\nNow give your final response to the user based on these results.`,
+      });
+    }
+    return null; // exhausted rounds without a prose reply
+  }
+
+  /**
+   * Process a user message and return the full response (blocking).
+   * Used by the non-streaming API endpoint and by Claude Code for evaluation.
+   */
+  async chat(userMessage) {
+    const prepared = await this._prepare(userMessage);
+    const { contextMessages, workingMessages, memoriesInjected, internalReasoning } = prepared;
+
+    const toolsUsed = [], toolErrors = [], toolActivity = [];
+    let reply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity);
+
+    if (!reply) {
+      reply = stripToolCalls(workingMessages[workingMessages.length - 1]?.content || '');
+    }
+
+    const stats = this._finish(userMessage, reply, {
+      contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
+    });
 
     return {
       reply,
@@ -202,8 +209,69 @@ export class Agent {
   }
 
   /**
-   * Record explicit feedback on a past turn.
+   * Process a user message with streaming output.
+   * Calls onToken(text) for each streamed token of the final reply.
+   * Calls onTool(activity[]) when tool rounds complete.
+   * Calls onDone(stats) when finished.
+   * Calls onError(err) on failure.
+   *
+   * Tool rounds run blocking (they produce short tool-call syntax, not prose).
+   * The final prose reply is streamed.
    */
+  async chatStream(userMessage, { onToken, onTool, onDone, onError }) {
+    let prepared;
+    try {
+      prepared = await this._prepare(userMessage);
+    } catch (err) {
+      onError(err);
+      return;
+    }
+
+    const { needsTools, contextMessages, workingMessages, memoriesInjected, internalReasoning } = prepared;
+    const toolsUsed = [], toolErrors = [], toolActivity = [];
+    let reply = '';
+
+    try {
+      if (needsTools) {
+        // Run tool rounds (blocking). If the loop returns a reply, it means the
+        // LLM produced prose before any tool calls — use it directly (no stream).
+        const loopReply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity);
+
+        if (toolActivity.length) onTool(toolActivity);
+
+        if (loopReply) {
+          // LLM went straight to prose without using tools — emit as single token block.
+          reply = loopReply;
+          onToken(reply);
+        } else {
+          // Tool rounds ran; stream the final reply.
+          for await (const token of chatCompletionStream(workingMessages, { maxTokens: 1024 })) {
+            reply += token;
+            onToken(token);
+          }
+        }
+      } else {
+        // No tools needed — stream directly.
+        for await (const token of chatCompletionStream(workingMessages, { maxTokens: 1024 })) {
+          reply += token;
+          onToken(token);
+        }
+      }
+    } catch (err) {
+      onError(err);
+      return;
+    }
+
+    if (!reply) reply = '(no response)';
+
+    const stats = this._finish(userMessage, reply, {
+      contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
+    });
+
+    onDone(stats);
+  }
+
+  /** Record explicit feedback on a past turn. */
   feedback(turnId, feedback, note = '') {
     return recordFeedback(turnId, feedback, note);
   }

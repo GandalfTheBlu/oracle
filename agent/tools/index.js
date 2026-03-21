@@ -17,6 +17,7 @@ import { runCommand } from './run_command.js';
 import { listDir } from './list_dir.js';
 import { searchFiles } from './search_files.js';
 import { git } from './git.js';
+import { webFetch, webReadChunk, webSearchPage } from './web_fetch.js';
 
 /** Tool registry — name → tool definition. */
 export const TOOLS = {
@@ -26,6 +27,9 @@ export const TOOLS = {
   list_dir: listDir,
   search_files: searchFiles,
   git,
+  web_fetch: webFetch,
+  web_read_chunk: webReadChunk,
+  web_search_page: webSearchPage,
 };
 
 /** Keywords that suggest a tools-capable query. */
@@ -36,6 +40,7 @@ const TOOL_KEYWORDS = [
   'search', 'find', 'grep', 'look for',
   'code', 'function', 'class', 'import', 'export', 'module',
   'list', 'show me', 'check',
+  'url', 'http', 'https', 'website', 'web', 'page', 'fetch', 'browse', 'look up', 'look this up',
 ];
 
 /**
@@ -58,10 +63,12 @@ export function buildToolsPrompt() {
     .map(([name, t]) => `${name}: ${t.description}`)
     .join('\n');
 
-  return `\n\n[Tools]: To use a tool, emit: <tool>{"name":"NAME","args":{...}}</tool>
-Tools: ${toolList}
-Args: ${argsList}
-Only use tools when needed. Multiple calls allowed per turn.`;
+  return `\n\n[Tools]: You MUST use tools to answer — do not describe what you would do, just call the tool immediately.
+Emit: <tool>{"name":"NAME","args":{...}}</tool>
+Available: ${toolList}
+Args:
+${argsList}
+Rules: call tools immediately without preamble; multiple calls allowed; for any URL/website always call web_fetch first.`;
 }
 
 /**

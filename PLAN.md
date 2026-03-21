@@ -72,11 +72,22 @@
 - [x] toolActivity returned in API response: [{tool, args, result}] per turn
 - [x] UI: tool calls shown as collapsible <details> blocks above assistant reply (green ⚙ header)
 
-### Milestone 2.4 — Next (ideas)
-- [ ] Streaming responses (SSE) — long tool results + LLM replies currently block until done
-- [ ] Oracle self-improvement: periodic review of learning log to update personality/behavior
-- [ ] More tools: web fetch, clipboard, calendar/reminders
-- [ ] Multi-turn tool correction: user can say "that was wrong" and Oracle retries with different args
+### Milestone 2.4 — Streaming + Web Fetch ✅
+- [x] SSE streaming: POST /message/stream endpoint; UI consumes with fetch + ReadableStream
+- [x] chatCompletionStream async generator in llm.js (stream: true)
+- [x] chatStream() method: tool rounds run blocking, final reply streams token by token
+- [x] Tool activity emitted as SSE event before streaming reply begins
+- [x] web_fetch tool: fetches via r.jina.ai, chunks content (3000 chars), caches to data/webcache/
+- [x] web_read_chunk: read any cached chunk by index
+- [x] web_search_page: search cached page for lines matching query terms
+- [x] Context budget fix: reasoning note included in fullSystemContent before buildContext call
+- [x] Tools prompt directive tightened: "call tools immediately without preamble"
+
+### Milestone 2.5 — Next
+- [ ] Genuine personality evolution: distill learning log into behavioral updates periodically
+- [ ] Oracle self-improvement: review successes/failures, adjust tone/style over time
+- [ ] Multi-turn tool correction: user can say "that was wrong" and Oracle retries
+- [ ] UI reset button
 
 ---
 

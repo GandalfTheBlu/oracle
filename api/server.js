@@ -5,7 +5,11 @@
 
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { Agent } from '../agent/index.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -13,6 +17,7 @@ const agent = new Agent();
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(join(__dirname, '../ui')));
 
 // ── Health check ─────────────────────────────────────────────────────────────
 
@@ -41,6 +46,39 @@ app.post('/message', async (req, res) => {
     console.error('[POST /message]', err.message);
     res.status(502).json({ error: 'LLM request failed', detail: err.message });
   }
+});
+
+// ── Streaming message (SSE) ───────────────────────────────────────────────────
+
+/**
+ * POST /message/stream
+ * Body: { "message": "..." }
+ * Response: SSE stream of events:
+ *   data: {"type":"token","text":"..."}
+ *   data: {"type":"tool","activity":[...]}
+ *   data: {"type":"done","stats":{...}}
+ *   data: {"type":"error","message":"..."}
+ */
+app.post('/message/stream', async (req, res) => {
+  const { message } = req.body;
+
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: 'message field is required' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  await agent.chatStream(message.trim(), {
+    onToken: (text) => send({ type: 'token', text }),
+    onTool:  (activity) => send({ type: 'tool', activity }),
+    onDone:  (stats) => { send({ type: 'done', stats }); res.end(); },
+    onError: (err) => { send({ type: 'error', message: err.message }); res.end(); },
+  });
 });
 
 // ── Get conversation history ──────────────────────────────────────────────────

@@ -190,20 +190,73 @@
       addMsg('user', text);
       const thinking = addMsg('system', 'Oracle is thinking…');
 
+      // Create the assistant bubble immediately so tokens stream into it.
+      let assistantBubble = null;
+      let toolInserted = false;
+
       try {
-        const res = await fetch(`${API}/message`, {
+        const res = await fetch(`${API}/message/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: text }),
         });
-        const data = await res.json();
-        thinking.remove();
-        if (data.reply) {
-          if (data.toolActivity) addToolActivity(data.toolActivity);
-          addMsg('assistant', data.reply);
-        } else {
-          addMsg('system', `Error: ${data.error || 'Unknown error'}`);
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          thinking.remove();
+          addMsg('system', `Error: ${data.error || res.statusText}`);
+          return;
         }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            let event;
+            try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+            if (event.type === 'token') {
+              if (!assistantBubble) {
+                thinking.remove();
+                assistantBubble = addMsg('assistant', '');
+              }
+              assistantBubble.textContent += event.text;
+              log.scrollTop = log.scrollHeight;
+
+            } else if (event.type === 'tool') {
+              if (!toolInserted) {
+                thinking.remove();
+                toolInserted = true;
+              }
+              addToolActivity(event.activity);
+
+            } else if (event.type === 'done') {
+              // Stream finished normally — nothing extra to do.
+
+            } else if (event.type === 'error') {
+              if (assistantBubble) {
+                assistantBubble.remove();
+              } else {
+                thinking.remove();
+              }
+              addMsg('system', `Error: ${event.message}`);
+            }
+          }
+        }
+
+        // If we never got any tokens (e.g. empty response), clean up thinking indicator.
+        if (!assistantBubble && !toolInserted) thinking.remove();
+
       } catch (e) {
         thinking.remove();
         addMsg('system', `Connection error: ${e.message}`);
