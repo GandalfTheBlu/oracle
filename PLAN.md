@@ -16,20 +16,19 @@
 - [x] POST /message → returns LLM response and full history
 - [x] Verified: Claude Code called the API and received a real LLM response
 
-### Milestone 1.2 — Conversation & Context (next)
+### Milestone 1.2 — Conversation & Context ✅
+- [x] Persist conversation history to disk (JSON) so it survives restarts
+- [x] Context window tracking (token estimation)
+- [x] Summarization-based compaction when context exceeds threshold
+- [x] Relevance scoring for message hiding
 
-### Milestone 1.2 — Conversation & Context
-- [ ] Persist conversation history to disk (JSON) so it survives restarts
-- [ ] Conversation history management (in-memory, then persistent)
-- [ ] Context window tracking (token estimation)
-- [ ] Summarization-based compaction when context exceeds threshold
-- [ ] Relevance scoring for message hiding
-
-### Milestone 1.3 — Vector Memory
-- [ ] Integrate Vectra local vector DB
-- [ ] Embed and store memories via local embedding endpoint
-- [ ] Retrieve relevant memories on each turn
-- [ ] Memory types: episodic (events), semantic (facts about user/world)
+### Milestone 1.3 — Vector Memory ✅
+- [x] Integrate Vectra local vector DB
+- [x] Embed and store memories via local embedding endpoint
+- [x] Retrieve relevant memories on each turn (injected into system prompt)
+- [x] Memory types: episodic (events), semantic (facts about user/world)
+- [x] Background extraction: LLM extracts semantic facts after each turn
+- [x] Cross-session recall verified: fresh conversation remembers past facts
 
 ### Milestone 1.4 — Personality & User Model
 - [ ] Persistent personality config (traits, tone, quirks)
