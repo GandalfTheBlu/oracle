@@ -1,8 +1,8 @@
 # Oracle — Plan
 
 ## Current Status
-**Phase:** Phase 1 — Foundation
-**Last session:** Milestone 1.1 complete. Agent API running, LLM responding end-to-end.
+**Phase:** Phase 1 complete → Phase 2 — Tool Integrations
+**Last session:** All Phase 1 milestones done. Oracle has: persistent history, context compaction, vector memory (episodic + semantic), personality system, user model, internal reasoning, and learning/feedback logging.
 
 ---
 
@@ -44,10 +44,10 @@
 - [x] Feedback mechanism: POST /feedback with turnId + "positive"/"negative"
 - [x] getLearningStats() exposed via GET /state
 
-### Milestone 1.6 — Web UI (basic)
-- [ ] HTML/CSS/JS chat interface
-- [ ] Connects to Agent API
-- [ ] Displays conversation with basic styling
+### Milestone 1.6 — Web UI (basic) ✅
+- [x] HTML/CSS/JS chat interface (ui/index.html)
+- [x] Connects to Agent API
+- [x] Displays conversation with basic styling (dark theme)
 
 ---
 
