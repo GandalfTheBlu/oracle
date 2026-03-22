@@ -5,7 +5,7 @@
     "binary": "C:\\llama_cpp\\bin\\llama-server.exe",
     "model": "C:\\llama_cpp\\models\\qwen2.5-coder-7b-instruct-q8_0-00001-of-00003.gguf",
     "contextSize": 8192,
-    "extraArgs": "--jinja --flash-attn"
+    "extraArgs": "--jinja"
   },
   "embedding": {
     "serverHost": "192.168.0.208",
