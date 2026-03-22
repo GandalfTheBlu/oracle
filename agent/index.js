@@ -24,7 +24,6 @@ import { logInteraction, recordFeedback, getLearningStats } from './learning.js'
 import { shouldEvolve, runEvolution, applyEvolution } from './evolution.js';
 import {
   buildToolsPrompt,
-  retrieveRelevantTools,
   extractToolCalls,
   stripToolCalls,
   TOOLS,
@@ -75,12 +74,12 @@ export class Agent {
     this.history.push({ role: 'user', content: userMessage });
     recordInteraction(this.personality);
 
-    const { toolNames, needsTools } = await retrieveRelevantTools(userMessage, TOOLS);
+    // System prompt carries identity/personality/user model only — no tools.
+    // Tools are injected fresh as a user message at each LLM call (see _runToolLoop).
     const systemPrompt =
       BASE_SYSTEM_PROMPT +
       buildPersonalityPrompt(this.personality) +
-      buildUserModelPrompt(this.userModel) +
-      (needsTools ? buildToolsPrompt(toolNames) : '');
+      buildUserModelPrompt(this.userModel);
 
     let memoryBlock = '';
     let memoriesInjected = 0;
@@ -97,11 +96,18 @@ export class Agent {
     }
 
     // Build a preliminary context to feed the reasoning pass.
+    // Inject all tools into the reasoning pass so it can plan with full awareness
+    // of what's available — but this injection is transient and never saved to history.
     const prelimContextMessages = await buildContext(this.history, systemPrompt + memoryBlock, userMessage);
 
     let internalReasoning = '';
     try {
-      internalReasoning = await reason(userMessage, systemPrompt + memoryBlock, prelimContextMessages);
+      internalReasoning = await reason(
+        userMessage,
+        systemPrompt + memoryBlock,
+        prelimContextMessages,
+        buildToolsPrompt(),   // tools visible to reasoning, not persisted
+      );
     } catch (err) {
       console.warn('[agent] Reasoning pass failed:', err.message);
     }
@@ -110,7 +116,6 @@ export class Agent {
       ? `\n\n[Your internal reasoning]: ${internalReasoning}\nNow give your actual reply:`
       : '';
 
-    // Build final context using the complete system content so the token budget is accurate.
     const fullSystemContent = systemPrompt + memoryBlock + reasoningNote;
     const contextMessages = await buildContext(this.history, fullSystemContent, userMessage);
 
@@ -119,18 +124,15 @@ export class Agent {
       ...contextMessages,
     ];
 
-    // If the user is correcting a previous tool call, inject context just before
-    // their message so the LLM retries with a different approach.
+    // If the user is correcting a previous tool call, append a retry directive.
     if (this.lastToolActivity?.length && isCorrectionMessage(userMessage)) {
-      const toolNames = [...new Set(this.lastToolActivity.map(a => a.tool))].join(', ');
-      // Append correction directive to the user's message — more reliable than
-      // a mid-conversation system message with some local models.
+      const correctionToolNames = [...new Set(this.lastToolActivity.map(a => a.tool))].join(', ');
       const lastMsg = workingMessages[workingMessages.length - 1];
-      lastMsg.content += `\n[Call ${toolNames} again now with the corrected arguments I just gave. Emit the tool call immediately — do not explain.]`;
+      lastMsg.content += `\n[Call ${correctionToolNames} again now with the corrected arguments I just gave. Emit the tool call immediately — do not explain.]`;
       console.log('[agent] Correction detected — appended retry directive to user message.');
     }
 
-    return { needsTools, contextMessages, workingMessages, memoriesInjected, internalReasoning };
+    return { contextMessages, workingMessages, memoriesInjected, internalReasoning };
   }
 
   /**
@@ -187,8 +189,12 @@ export class Agent {
    * @private
    */
   async _runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired = null) {
+    const toolsMessage = { role: 'user', content: buildToolsPrompt() };
+
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const raw = await chatCompletion(workingMessages, { maxTokens: 1024 });
+      // Inject tools fresh at the end of context for each round — maximally salient,
+      // never persisted to workingMessages or conversation history.
+      const raw = await chatCompletion([...workingMessages, toolsMessage], { maxTokens: 1024 });
       const calls = extractToolCalls(raw);
 
       if (calls.length === 0) {
@@ -251,6 +257,7 @@ export class Agent {
     const { contextMessages, workingMessages, memoriesInjected, internalReasoning } = prepared;
 
     const toolsUsed = [], toolErrors = [], toolActivity = [];
+    // Tools are always injected fresh inside _runToolLoop — no needsTools gate needed.
     let reply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity);
 
     if (!reply) {
@@ -290,32 +297,25 @@ export class Agent {
       return;
     }
 
-    const { needsTools, contextMessages, workingMessages, memoriesInjected, internalReasoning } = prepared;
+    const { contextMessages, workingMessages, memoriesInjected, internalReasoning } = prepared;
     const toolsUsed = [], toolErrors = [], toolActivity = [];
     let reply = '';
 
     try {
-      if (needsTools) {
-        // Run tool rounds (blocking). If the loop returns a reply, it means the
-        // LLM produced prose before any tool calls — use it directly (no stream).
-        const loopReply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired);
+      // Always run the tool loop — tools are injected fresh inside it.
+      // If the LLM doesn't call any tools, the loop returns the prose reply immediately.
+      const loopReply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired);
 
-        if (toolActivity.length) onTool(toolActivity);
+      if (toolActivity.length) onTool(toolActivity);
 
-        if (loopReply) {
-          // LLM went straight to prose without using tools — emit as single token block.
-          reply = loopReply;
-          onToken(reply);
-        } else {
-          // Tool rounds ran; stream the final reply.
-          for await (const token of chatCompletionStream(workingMessages, { maxTokens: 1024 })) {
-            reply += token;
-            onToken(token);
-          }
-        }
+      if (loopReply) {
+        // LLM produced prose without calling tools — emit as a single block.
+        reply = loopReply;
+        onToken(reply);
       } else {
-        // No tools needed — stream directly.
-        for await (const token of chatCompletionStream(workingMessages, { maxTokens: 1024 })) {
+        // Tool rounds ran; stream the final reply with tools still available.
+        const toolsMessage = { role: 'user', content: buildToolsPrompt() };
+        for await (const token of chatCompletionStream([...workingMessages, toolsMessage], { maxTokens: 1024 })) {
           reply += token;
           onToken(token);
         }

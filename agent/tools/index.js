@@ -24,7 +24,6 @@ import { runCommand } from './run_command.js';
 import { searchRegex } from './search_regex.js';
 import { codeSymbols } from './code_symbols.js';
 import { webFetch } from './web_fetch.js';
-export { retrieveRelevantTools } from './tool_retrieval.js';
 
 /** Tool registry — name → tool definition. */
 export const TOOLS = {
@@ -51,7 +50,9 @@ export function buildToolsPrompt(toolNames) {
     .map(([name, t]) => `${name}: ${t.description}`)
     .join('\n');
 
-  return `\n\n[Tools]: You MUST use tools to answer — do not describe what you would do, just call the tool immediately.
+  return `\n\n[Tools available — use them when the task genuinely requires it]:
+Call a tool only if the task requires reading/writing files, running commands, searching code, or fetching URLs.
+For conversational messages or questions you can answer from knowledge, respond directly without calling any tools.
 Format (XML — element names are the exact parameter names from the Args list below):
 <tool name="read_file">
 <path>/some/file.txt</path>
@@ -59,7 +60,7 @@ Format (XML — element names are the exact parameter names from the Args list b
 </tool>
 Args:
 ${argsList}
-Rules: call tools immediately without preamble; multiple calls allowed; for any URL/website always call web_fetch first.`;
+Rules: call tools immediately without preamble when needed; multiple calls allowed; for any URL/website always call web_fetch first.`;
 }
 
 /** Coerce an XML text value to the appropriate JS primitive. */

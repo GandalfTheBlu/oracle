@@ -19,7 +19,7 @@ import { chatCompletion } from './llm.js';
  * @param {Array}  contextMessages Recent conversation context.
  * @returns {Promise<string>}      A brief internal reasoning note.
  */
-export async function reason(userMessage, systemPrompt, contextMessages) {
+export async function reason(userMessage, systemPrompt, contextMessages, toolsContent = '') {
   const reasoningMessages = [
     {
       role: 'system',
@@ -31,6 +31,7 @@ export async function reason(userMessage, systemPrompt, contextMessages) {
         'Keep your reasoning concise (3-5 sentences). Do NOT write the actual reply yet — just think it through.',
     },
     ...contextMessages,
+    ...(toolsContent ? [{ role: 'user', content: toolsContent }] : []),
     {
       role: 'user',
       content: `[Think through how to respond to]: ${userMessage}`,

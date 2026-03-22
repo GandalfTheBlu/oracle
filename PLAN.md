@@ -111,6 +111,15 @@
 - [x] Embedding-based tool retrieval: cosine similarity selects top-5 relevant tools, doubles as needsTools gate — agent/tools/tool_retrieval.js
 - [x] Code comprehension: code_symbols — lists functions/classes/methods/interfaces with line numbers via web-tree-sitter (WASM, no native compilation). Supports JS/TS/Python.
 
+### Milestone 3.0 — Tool Injection Refactor ✅
+- [x] Removed embedding-based tool retrieval (`retrieveRelevantTools`) entirely
+- [x] Tools injected fresh as a user message at the end of context for each LLM call in `_runToolLoop` — never persisted to history
+- [x] Reasoning pass receives all tools as a transient user message — sees full tool list when planning, injection not saved to history
+- [x] System prompt stripped of all tool content — carries only identity/personality/user model
+- [x] Tools prompt directive changed from "MUST use tools" to conditional "use when the task genuinely requires it" — prevents spurious tool calls on conversational messages
+- [x] `needsTools` gate removed; `chatStream` always runs tool loop; `retrieveRelevantTools` export removed
+- [x] All 126 tests green after refactor
+
 ### Milestone 2.9 — Evaluation & Hardening ✅
 - [x] tests/test_unit.js: 68 pure-logic tests (extractToolCalls, stripToolCalls, buildToolsPrompt, approval gate, run_command.dangerous(), read_file.run(), edit_file.run())
 - [x] tests/test_integration.js: 58 API-driven tests (health, /message, /message/stream SSE, /history, /reset, /state, /feedback, /approve, /memory, /reset/full, E2E tool use, multi-turn coherence)
