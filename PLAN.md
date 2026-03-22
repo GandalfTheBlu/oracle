@@ -163,14 +163,14 @@ Wire up the existing vision endpoint (`:8082`, already configured).
 - [x] Embedding-based tool retrieval: cosine similarity selects top-5 relevant tools, doubles as needsTools gate — agent/tools/tool_retrieval.js
 - [x] Code comprehension: code_symbols — lists functions/classes/methods/interfaces with line numbers via web-tree-sitter (WASM, no native compilation). Supports JS/TS/Python.
 
-### Milestone 3.0 — Tool Injection Refactor ✅
-- [x] Removed embedding-based tool retrieval (`retrieveRelevantTools`) entirely
-- [x] Tools injected fresh as a user message at the end of context for each LLM call in `_runToolLoop` — never persisted to history
-- [x] Reasoning pass receives all tools as a transient user message — sees full tool list when planning, injection not saved to history
-- [x] System prompt stripped of all tool content — carries only identity/personality/user model
-- [x] Tools prompt directive changed from "MUST use tools" to conditional "use when the task genuinely requires it" — prevents spurious tool calls on conversational messages
-- [x] `needsTools` gate removed; `chatStream` always runs tool loop; `retrieveRelevantTools` export removed
-- [x] All 126 tests green after refactor
+### Milestone 3.0 — Native Function Calling ✅
+- [x] Removed XML text parser entirely (`extractToolCalls`, `stripToolCalls`, `buildToolsPrompt`, `coerceArg` all gone)
+- [x] `llm.js`: `chatCompletion` accepts `opts.tools`, passes `tools`/`tool_choice:'auto'` to API, returns `{content, tool_calls, finish_reason}` when tools provided
+- [x] `tools/index.js`: `TOOLS_SCHEMA` — OpenAI function definitions for all 7 tools, used directly by llama.cpp jinja template
+- [x] `_runToolLoop`: iterates `response.tool_calls`, injects results as `{role:'tool', tool_call_id, content}` per OpenAI spec
+- [x] `reasoning.js`: no longer receives toolsContent — reasoning pass uses plain text only
+- [x] Unit tests updated: XML parser tests replaced with TOOLS_SCHEMA structure + registry tests (95 unit + 58 integration, all green)
+- [x] Live eval confirmed: read_file and write_file called correctly via native tool_calls
 
 ### Milestone 2.9 — Evaluation & Hardening ✅
 - [x] tests/test_unit.js: 68 pure-logic tests (extractToolCalls, stripToolCalls, buildToolsPrompt, approval gate, run_command.dangerous(), read_file.run(), edit_file.run())
