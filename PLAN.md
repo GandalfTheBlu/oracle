@@ -19,12 +19,13 @@
 - [x] tests/eval_persona.js: 8 graded checks (8/8 pass), recall test included
 - [x] All 153 tests green after fixes
 
-### Milestone 3.2 — Self-Reflection / Validation Loop
-Post-response reflection pass leveraging the faster 7B model.
-- [ ] After generating a reply, run a lightweight second LLM pass: "Does this fully answer the question? Did I verify tool outputs? Is anything missing?"
-- [ ] If reflection flags an issue, retry or append a correction before sending
-- [ ] Particularly valuable for tool use: catches "wrote file but never verified content", "ran command but didn't check output"
-- [ ] Configurable: reflection only when tools were used, or always
+### Milestone 3.2 — Self-Reflection / Validation Loop ✅
+- [x] agent/reflection.js: post-reply LLM pass checks answer completeness + tool output fidelity
+- [x] Returns {ok:true} (silent) or {ok:false, correction} — correction replaces reply
+- [x] chat(): reflect after _runToolLoop, before _finish
+- [x] chatStream() tool path: collect full reply before emitting so correction can happen before user sees anything
+- [x] config.json: reflection.enabled + reflection.onToolsOnly (default: only on tool-using turns)
+- [x] Verified firing via server logs: [reflection] Reply validated OK. / [reflection] Correction applied: ...
 
 ### Milestone 3.3 — Cross-Context Awareness
 Oracle knows your current situation without being told.
