@@ -176,7 +176,13 @@ export const codeSymbols = {
     if (isPython) walkPython(tree.rootNode, symbols);
     else walkJS(tree.rootNode, symbols);
 
-    if (symbols.length === 0) return `No symbols found in ${path}`;
+    if (symbols.length === 0) {
+      // No parseable top-level symbols (common with object-literal exports or
+      // router-style call patterns). Fall back to raw file content so the model
+      // can still reason about the file rather than concluding it is empty.
+      const lineCount = source.split('\n').length;
+      return `No top-level symbols detected in ${path} (${lineCount} lines). File content:\n\n${source}`;
+    }
 
     const langName = isPython ? 'Python' : (ext === '.ts' || ext === '.tsx' ? 'TypeScript' : 'JavaScript');
     const lines = symbols.map(s => '  '.repeat(s.depth) + `${s.kind} ${s.name} [line ${s.line}]`);
