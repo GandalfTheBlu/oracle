@@ -35,15 +35,9 @@
 - [x] config.json: contextAwareness.{enabled, watchedDirs, recentFileHours, maxRecentFiles, focusFile}
 - [x] Example output: "Git (oracle): branch=master | Milestone 3.3 (2m ago) → ..."
 
-### Milestone 3.4 — Proactive Behavior ✅
-- [x] agent/proactive.js: background scheduler tracks git hashes + file mtimes, detects changes
-- [x] New commits: always noteworthy → immediate notification
-- [x] File activity: fires only at ≥ minFileChanges threshold (default 3) to avoid noise
-- [x] Cooldown: configurable minutes between messages (default 5min)
-- [x] LLM generates short conversational observation (80 token, 0.7 temp); plain fallback on LLM failure
-- [x] api/server.js: GET /events SSE endpoint; pushProactive() broadcasts to all clients
-- [x] ui/index.html: EventSource with auto-reconnect; proactive messages in distinct green bubbles
-- [x] Verified: detects new commit within 5s in live test
+### Milestone 3.4 — Proactive Behavior (removed)
+Background git/file-change notifier was removed — it only surfaced things the user already knew.
+Replaced by the codebase analyzer (3.4b) which produces genuinely new architectural insight.
 
 ### Milestone 3.4b — Codebase Analyzer ✅
 Background codebase analysis engine that produces a living architecture document.

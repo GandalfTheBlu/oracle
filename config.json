@@ -7,15 +7,7 @@
     "enabled": true,
     "onToolsOnly": true
   },
-  "proactive": {
-    "enabled": true,
-    "intervalSeconds": 60,
-    "cooldownMinutes": 5,
-    "watchGit": true,
-    "watchFiles": true,
-    "minFileChanges": 3
-  },
-  "contextAwareness": {
+"contextAwareness": {
     "enabled": true,
     "watchedDirs": ["C:/oracle", "C:/sandbox"],
     "recentFileHours": 2,

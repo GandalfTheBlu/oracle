@@ -10,7 +10,6 @@ import { dirname, join } from 'path';
 import { Agent } from '../agent/index.js';
 import { resolveApproval } from '../agent/approval.js';
 import { chatCompletion } from '../agent/llm.js';
-import { startScheduler } from '../agent/proactive.js';
 import { runAnalysis } from '../agent/codebase_analyzer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -252,46 +251,14 @@ app.post('/evolve', async (_req, res) => {
   }
 });
 
-// ── Server-sent events (proactive push) ──────────────────────────────────────
-
-/** Set of active SSE response objects. */
-const sseClients = new Set();
-
-/**
- * GET /events
- * Persistent SSE connection. Receives proactive events from Oracle.
- * Event format: data: {"type":"proactive","message":"..."}
- */
-app.get('/events', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  // Send a heartbeat immediately so the client knows it's connected.
-  res.write('data: {"type":"connected"}\n\n');
-
-  sseClients.add(res);
-  req.on('close', () => sseClients.delete(res));
-});
-
-function pushProactive(message) {
-  const payload = `data: ${JSON.stringify({ type: 'proactive', message })}\n\n`;
-  for (const client of sseClients) {
-    try { client.write(payload); } catch { sseClients.delete(client); }
-  }
-  console.log(`[proactive] Pushed to ${sseClients.size} client(s): ${message.slice(0, 80)}`);
-}
-
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`Oracle API running on http://localhost:${PORT}`);
-  startScheduler(chatCompletion, pushProactive);
 
   // Run initial codebase analysis after a short delay to avoid blocking startup.
   setTimeout(() => {
-    runAnalysis(chatCompletion, (issue) => pushProactive(`[Code issue] ${issue}`))
+    runAnalysis(chatCompletion)
       .then(r => r && console.log(`[analyzer] Startup pass: ${r.analyzed} analyzed, ${r.issues.length} issues`))
       .catch(err => console.warn('[analyzer] Startup pass failed:', err.message));
   }, 5000);
