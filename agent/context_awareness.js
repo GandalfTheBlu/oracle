@@ -16,9 +16,9 @@
 import { execSync } from 'child_process';
 import { readdirSync, statSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import config from '../config.json' with { type: 'json' };
+import workspace from './workspace.js';
 
-const cfg = config.contextAwareness ?? { enabled: false };
+const cfg = workspace.config.contextAwareness ?? { enabled: false };
 
 /** How long (ms) to reuse a scan result before rescanning. */
 const CACHE_TTL_MS = 30_000;
@@ -144,7 +144,7 @@ export function buildSituationalContext() {
   }
 
   // ── Codebase analysis pointer ────────────────────────────────────────────────
-  const analysisPath = config.codeAnalysis?.outputPath;
+  const analysisPath = workspace.config.codeAnalysis?.outputPath;
   if (analysisPath && existsSync(analysisPath)) {
     parts.push(`Codebase analysis available at: ${analysisPath.replace(/\\/g, '/')}`);
   }

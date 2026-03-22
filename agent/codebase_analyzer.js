@@ -17,13 +17,14 @@
  * Configured via config.json → codeAnalysis.*
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, appendFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
 import { join, extname } from 'path';
-import config from '../config.json' with { type: 'json' };
+import workspace from './workspace.js';
+import { getDataDir } from './data-dir.js';
 
-const cfg = config.codeAnalysis ?? { enabled: false };
+const cfg = workspace.config.codeAnalysis ?? { enabled: false };
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.cache', 'data', 'test-tmp', 'eval-tmp']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.cache', 'data', '.oracle', 'test-tmp', 'eval-tmp']);
 
 /** Chars per chunk sent to per-chunk LLM call. Files larger than this are split. */
 const CHUNK_SIZE = 5500;
@@ -373,9 +374,22 @@ export async function runAnalysis(llmCall, onIssue) {
     const elapsedSecs = ((Date.now() - startMs) / 1000).toFixed(1);
     console.log(`[analyzer] Done in ${elapsedSecs}s → ${outputPath} (${allIssues.length} issues)`);
 
+    // Append to persistent analysis log
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      analyzed,
+      total: fileEntries.length,
+      issueCount: allIssues.length,
+      issues: allIssues,
+      outputPath,
+    };
+    try {
+      const logPath = join(getDataDir(), 'analysis_log.jsonl');
+      appendFileSync(logPath, JSON.stringify(logEntry) + '\n', 'utf8');
+    } catch { /* non-fatal */ }
+
     // Surface new issues via proactive callback
     if (onIssue && allIssues.length > 0 && analyzed > 0) {
-      // Only notify about issues in files that were just re-analyzed
       const newIssueFiles = new Set(
         toAnalyze
           .map(f => f.path)
@@ -385,7 +399,7 @@ export async function runAnalysis(llmCall, onIssue) {
         const name = i.match(/\*\*(.+?)\*\*/)?.[1];
         return name && [...newIssueFiles].some(p => p.endsWith(name));
       });
-      for (const issue of newIssues.slice(0, 3)) { // cap at 3 notifications
+      for (const issue of newIssues.slice(0, 3)) {
         onIssue(issue);
       }
     }
@@ -394,4 +408,20 @@ export async function runAnalysis(llmCall, onIssue) {
   } finally {
     _analysisRunning = false;
   }
+}
+
+/**
+ * Return the last `limit` analysis log entries, most recent first.
+ * @param {number} [limit=50]
+ * @returns {{ timestamp, analyzed, total, issueCount, issues, outputPath }[]}
+ */
+export function getAnalysisLog(limit = 50) {
+  const logPath = join(getDataDir(), 'analysis_log.jsonl');
+  if (!existsSync(logPath)) return [];
+  const lines = readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean);
+  return lines
+    .slice(-limit)
+    .map(l => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(Boolean)
+    .reverse();
 }

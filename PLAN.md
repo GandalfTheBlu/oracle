@@ -39,6 +39,22 @@
 Background git/file-change notifier was removed — it only surfaced things the user already knew.
 Replaced by the codebase analyzer (3.4b) which produces genuinely new architectural insight.
 
+### Milestone 3.4c — Workspace Isolation + Analysis Log ✅
+- [x] agent/workspace.js: singleton that discovers workspace by walking up from CWD for .oracle/
+  - Merges globalConfig → workspace defaults → workspace .oracle/config.json
+  - DATA_DIR env var bypasses workspace for test isolation (backward compat)
+  - Workspace-specific defaults: watchedDirs, focusFile, codeAnalysis.dirs/outputPath all derived from workspace root
+- [x] agent/data-dir.js: now delegates to workspace.dataDir instead of project-relative path
+- [x] config.json: hardcoded paths removed; only global defaults remain (LLM endpoints, extension lists, etc.)
+- [x] Startup prints workspace root and data dir for visibility
+- [x] To spawn Oracle in a project: cd /myproject && node C:/oracle/api/server.js
+  - Creates /myproject/.oracle/data/ on first run
+  - Override any setting in /myproject/.oracle/config.json
+- [x] Analysis log: each run appended to data/analysis_log.jsonl
+  - GET /analyze/log returns full history
+  - UI: "log" button opens side panel showing all runs with timestamps, file counts, and issue lists
+  - Persists across page reloads (server-side jsonl)
+
 ### Milestone 3.4b — Codebase Analyzer ✅
 Background codebase analysis engine that produces a living architecture document.
 - [x] agent/codebase_analyzer.js: two-pass strategy

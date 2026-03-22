@@ -1,24 +1,16 @@
 /**
  * Shared data directory resolver.
  *
- * All persistent data modules import getDataDir() from here so that
- * the data location can be overridden via the DATA_DIR environment
- * variable — primarily useful for test isolation.
- *
- * Usage:
- *   DATA_DIR=data/test node test-evolution.js
+ * Returns the active workspace's data directory.
+ * In normal use this is <workspace>/.oracle/data/.
+ * The DATA_DIR env var overrides this for test isolation.
  */
 
-import { join, isAbsolute } from 'path';
-import { fileURLToPath } from 'url';
-
-const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
+import workspace from './workspace.js';
 
 /**
- * Returns the absolute path to the data directory.
- * Defaults to <project-root>/data unless DATA_DIR is set.
+ * Returns the absolute path to the runtime data directory.
  */
 export function getDataDir() {
-  const dir = process.env.DATA_DIR || 'data';
-  return isAbsolute(dir) ? dir : join(ROOT, dir);
+  return workspace.dataDir;
 }

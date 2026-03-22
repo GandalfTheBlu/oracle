@@ -10,7 +10,8 @@ import { dirname, join } from 'path';
 import { Agent } from '../agent/index.js';
 import { resolveApproval } from '../agent/approval.js';
 import { chatCompletion } from '../agent/llm.js';
-import { runAnalysis } from '../agent/codebase_analyzer.js';
+import { runAnalysis, getAnalysisLog } from '../agent/codebase_analyzer.js';
+import workspace from '../agent/workspace.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -247,6 +248,18 @@ app.get('/analyze/status', (_req, res) => {
   res.json({ status: 'ok', ..._lastAnalysis });
 });
 
+/**
+ * GET /analyze/log
+ * Returns the full persistent analysis run history.
+ */
+app.get('/analyze/log', (_req, res) => {
+  try {
+    res.json({ entries: getAnalysisLog() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Force evolution (testing / manual trigger) ────────────────────────────────
 
 /**
@@ -268,6 +281,8 @@ app.post('/evolve', async (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Oracle API running on http://localhost:${PORT}`);
+  console.log(`Workspace: ${workspace.root}${workspace.oracleDir ? ' (.oracle/)' : ' (legacy)'}`);
+  console.log(`Data dir:  ${workspace.dataDir}`);
 
   // Run initial codebase analysis after a short delay to avoid blocking startup.
   setTimeout(() => {
