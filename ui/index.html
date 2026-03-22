@@ -402,6 +402,34 @@
 
     .approval-status { font-size: 0.8rem; margin-top: 0.2rem; }
 
+    /* Proactive message bubble — Oracle-initiated, distinct from reply */
+    .msg.proactive {
+      align-self: flex-start;
+      background: #0d1a0d;
+      border: 1px solid #2a4a1a;
+      color: #c8e6c8;
+      font-size: 0.9rem;
+      position: relative;
+      padding-left: 1.2rem;
+    }
+
+    .msg.proactive::before {
+      content: '◉';
+      position: absolute;
+      left: -1.4rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #4a8a2a;
+      font-size: 0.65rem;
+    }
+
+    .proactive-label {
+      font-size: 0.68rem;
+      color: #4a7a3a;
+      margin-bottom: 0.25rem;
+      font-style: italic;
+    }
+
     /* Memory category badges */
     .mem-type.category-pref       { background: #2a1a3a; color: #b07ef7; }
     .mem-type.category-fact       { background: #0d2a2a; color: #5dd0c8; }
@@ -780,6 +808,37 @@
         loadMemories();
       });
     });
+
+    function addProactiveMsg(text) {
+      const div = document.createElement('div');
+      div.className = 'msg proactive';
+      const label = document.createElement('div');
+      label.className = 'proactive-label';
+      label.textContent = 'oracle';
+      const body = document.createElement('div');
+      body.textContent = text;
+      div.appendChild(label);
+      div.appendChild(body);
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // Proactive SSE connection
+    function connectEvents() {
+      const es = new EventSource(`${API}/events`);
+      es.onmessage = (e) => {
+        try {
+          const ev = JSON.parse(e.data);
+          if (ev.type === 'proactive') addProactiveMsg(ev.message);
+        } catch {}
+      };
+      es.onerror = () => {
+        es.close();
+        // Reconnect after 10s if connection drops
+        setTimeout(connectEvents, 10_000);
+      };
+    }
+    connectEvents();
 
     // Restore conversation history on page load
     (async () => {
