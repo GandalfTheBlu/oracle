@@ -8,13 +8,16 @@
 
 ## Phase 3 — Intelligence & Partnership (priority order)
 
-### Milestone 3.1 — Personality & User Model Evaluation
-Deep evaluation of whether Oracle actually builds an accurate model of the user and develops personality over time.
-- [ ] Define a fake persona (name, job, preferences, communication style, quirks)
-- [ ] Run a structured interaction session as that persona: casual chat, preferences stated, tasks done, corrections given
-- [ ] Audit: what memories were stored, what user model fields updated, how personality observations evolved
-- [ ] Evaluate response quality: does Oracle adapt tone/style/content to the persona over the session?
-- [ ] Document findings and fix gaps in memory extraction, user model updates, or personality evolution
+### Milestone 3.1 — Personality & User Model Evaluation ✅
+- [x] Persona: Maya Chen — senior backend engineer, Go/Python, distributed systems, hates over-explanation
+- [x] 8-turn structured session: intro, preference signal, technical task, correction, casual, follow-up, length correction, closing
+- [x] Bugs found and fixed:
+  - Memory extractor was storing Oracle's knowledge statements instead of user facts — fixed with "NEVER store what assistant said" instruction + user-centric examples
+  - User model didn't capture `name` field — added to extraction prompt
+  - Preferences too vague ("short" instead of "2-3 bullets max") — improved prompt + IMPORTANT hard directive in system prompt injection
+  - `updateUserModel` was background (fire-and-forget) so preferences weren't live for next turn — made synchronous, memory extraction stays background
+- [x] tests/eval_persona.js: 8 graded checks (8/8 pass), recall test included
+- [x] All 153 tests green after fixes
 
 ### Milestone 3.2 — Self-Reflection / Validation Loop
 Post-response reflection pass leveraging the faster 7B model.
