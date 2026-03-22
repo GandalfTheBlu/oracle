@@ -780,6 +780,23 @@
         loadMemories();
       });
     });
+
+    // Restore conversation history on page load
+    (async () => {
+      try {
+        const res = await fetch(`${API}/history`);
+        const data = await res.json();
+        if (data.history?.length) {
+          for (const msg of data.history) {
+            if (msg.role === 'user' || msg.role === 'assistant') {
+              addMsg(msg.role, msg.content);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Could not restore history:', e.message);
+      }
+    })();
   </script>
 </body>
 </html>
