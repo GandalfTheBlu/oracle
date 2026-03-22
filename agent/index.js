@@ -146,7 +146,7 @@ export class Agent {
    * Shared post-turn bookkeeping: save history, log interaction, background updates.
    * @private
    */
-  _finish(userMessage, reply, { contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors }) {
+  async _finish(userMessage, reply, { contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors }) {
     this.history.push({ role: 'assistant', content: reply });
     saveHistory(this.history);
     savePersonality(this.personality);
@@ -165,11 +165,17 @@ export class Agent {
       },
     });
 
+    // User model update is awaited so preferences are live for the NEXT turn.
+    // Memory extraction and evolution run in background (no latency cost).
+    try {
+      await updateUserModel(this.userModel, userMessage, reply, chatCompletion);
+      saveUserModel(this.userModel);
+    } catch (err) {
+      console.warn('[agent] User model update failed:', err.message);
+    }
+
     Promise.all([
       extractAndStore(userMessage, reply, chatCompletion),
-      updateUserModel(this.userModel, userMessage, reply, chatCompletion).then(() =>
-        saveUserModel(this.userModel)
-      ),
       this._maybeEvolve(),
     ]).catch(err => console.warn('[agent] Background update failed:', err.message));
 
@@ -268,7 +274,7 @@ export class Agent {
 
     this.lastToolActivity = toolActivity.length ? toolActivity : null;
 
-    const stats = this._finish(userMessage, reply, {
+    const stats = await this._finish(userMessage, reply, {
       contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
     });
 
@@ -330,7 +336,7 @@ export class Agent {
 
     this.lastToolActivity = toolActivity.length ? toolActivity : null;
 
-    const stats = this._finish(userMessage, reply, {
+    const stats = await this._finish(userMessage, reply, {
       contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
     });
 

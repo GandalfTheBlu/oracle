@@ -82,12 +82,14 @@ export async function updateUserModel(model, userMessage, assistantReply, llmCal
       role: 'system',
       content: `You are a user profiler. Given a conversation snippet, extract structured updates about the user.
 Output a single JSON object with these optional keys (omit keys with no new info):
-- "facts": { "label": "short factual string" }    — e.g. { "occupation": "software engineer" }
+- "facts": { "label": "short factual string" }    — e.g. { "name": "Maya", "occupation": "software engineer", "project": "job queue in Go" }
 - "interests": { "topic": 0.0–1.0 }               — inferred interest strength, e.g. { "Rust": 0.9 }
-- "preferences": { "label": "preference string" } — e.g. { "codeStyle": "prefers concise examples" }
+- "preferences": { "label": "preference string" } — e.g. { "responseLength": "2-3 bullet points max", "codeStyle": "no boilerplate" }
 
 Rules:
-- Only include genuinely new or updated information from THIS snippet.
+- Only extract facts the USER stated about themselves — not things the assistant said.
+- Always capture the user's name if stated (facts.name).
+- For preferences: capture communication style preferences precisely — e.g. "hates over-explanation", "wants 2-3 bullets max".
 - Keep values short (< 15 words).
 - Output ONLY valid JSON — no explanation, no markdown.`,
     },
@@ -146,6 +148,15 @@ export function buildUserModelPrompt(model) {
   }
   if (prefs.length > 0) {
     parts.push('Preferences: ' + prefs.map(([k, v]) => `${k}: ${v}`).join('; ') + '.');
+
+    // If a format/length preference is known, add a hard directive so the model
+    // actually honours it rather than just noting it.
+    const brevityPref = prefs.find(([, v]) =>
+      /concis|brief|short|bullet|terse|minimal|2.?3|few|less/i.test(v)
+    );
+    if (brevityPref) {
+      parts.push(`IMPORTANT: Always follow this user's response-format preference: "${brevityPref[1]}"`);
+    }
   }
 
   return parts.join('\n');

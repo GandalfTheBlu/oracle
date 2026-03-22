@@ -135,16 +135,18 @@ export async function extractAndStore(userMessage, assistantReply, llmCall) {
         {
           role: 'system',
           content:
-            'You extract memories worth keeping for future conversations.\n' +
+            'You extract memories about the USER worth keeping for future conversations.\n' +
+            'CRITICAL: Only store facts/preferences/corrections/decisions that the USER expressed. ' +
+            'NEVER store what the assistant said, general technical knowledge, or summaries of the conversation.\n\n' +
             'Only extract if content clearly fits one of these categories:\n' +
-            '- USER_PREFERENCE: how the user wants things done (tone, format, workflow, tools, style)\n' +
-            '- USER_FACT: personal info about the user (job, projects, constraints, goals, deadlines, background)\n' +
+            '- USER_PREFERENCE: how the user wants things done (tone, format, brevity, workflow, tools, style)\n' +
+            '- USER_FACT: personal info the user stated (name, job, projects, constraints, goals, background)\n' +
             '- BEHAVIORAL_CORRECTION: the user corrected or redirected the assistant\'s approach\n' +
-            '- PROJECT_DECISION: a significant technical or design decision and the reason behind it\n\n' +
-            'Do NOT extract: technical terms, generic world facts, summaries of what just happened, ' +
-            'things only relevant to this specific conversation.\n\n' +
-            'For each candidate, score 1–5: how useful would this be in a new conversation months from now?\n' +
-            'Only include items scoring 4 or 5.\n\n' +
+            '- PROJECT_DECISION: a technical/design decision the USER made and the reason they gave\n\n' +
+            'The memory text must be written as a fact ABOUT THE USER, not about the topic.\n' +
+            'Good: "User prefers 2-3 bullet points max" / "User is named Maya, senior backend engineer"\n' +
+            'Bad: "Work-stealing is a technique where..." / "Lock-free ring buffers have pitfall X"\n\n' +
+            'Score 1–5: how useful in a new conversation months from now? Only include score 4 or 5.\n\n' +
             'Output ONLY valid JSON: [{"category":"USER_PREFERENCE","text":"...","score":5}]\n' +
             'If nothing qualifies, output [].',
         },
