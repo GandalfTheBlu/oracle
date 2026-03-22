@@ -14,11 +14,12 @@
  */
 
 import { chatCompletion } from './llm.js';
+import config from '../config.json' with { type: 'json' };
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-/** LLM context size in tokens (from config — 8192 total). */
-const CONTEXT_LIMIT = 8192;
+/** LLM context size in tokens — read from config.json llm.contextSize. */
+const CONTEXT_LIMIT = config.llm.contextSize;
 
 /**
  * Target budget for history + system prompt together.
