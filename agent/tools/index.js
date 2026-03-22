@@ -78,13 +78,14 @@ function coerceArg(val) {
  * @returns {Array<{name: string, args: object, raw: string}>}
  */
 export function extractToolCalls(text) {
-  const toolPattern = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
   const calls = [];
+
+  // Primary format: <tool name="NAME"><arg>value</arg></tool>
+  const toolPattern = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
   let toolMatch;
   while ((toolMatch = toolPattern.exec(text)) !== null) {
     const name = toolMatch[1].trim();
     if (!TOOLS[name]) continue;
-
     const body = toolMatch[2];
     const args = {};
     const argPattern = /<(\w+)>([\s\S]*?)<\/\1>/g;
@@ -94,6 +95,26 @@ export function extractToolCalls(text) {
     }
     calls.push({ name, args, raw: toolMatch[0] });
   }
+
+  // Secondary format: <tool_name attr="value" /> (native Qwen style)
+  // Only used when no primary-format calls were found in this chunk of text.
+  if (calls.length === 0) {
+    const toolNames = Object.keys(TOOLS).join('|');
+    const altPattern = new RegExp(`<(${toolNames})\\s+([^>]*?)\\s*/>`, 'g');
+    const attrPattern = /(\w+)="((?:[^"\\]|\\.)*)"/g;
+    let altMatch;
+    while ((altMatch = altPattern.exec(text)) !== null) {
+      const name = altMatch[1];
+      const args = {};
+      let attrMatch;
+      attrPattern.lastIndex = 0;
+      while ((attrMatch = attrPattern.exec(altMatch[2])) !== null) {
+        args[attrMatch[1]] = coerceArg(attrMatch[2]);
+      }
+      calls.push({ name, args, raw: altMatch[0] });
+    }
+  }
+
   return calls;
 }
 
@@ -103,7 +124,12 @@ export function extractToolCalls(text) {
  * @returns {string}
  */
 export function stripToolCalls(text) {
-  return text.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/tool>/g, '').trim();
+  const toolNames = Object.keys(TOOLS).join('|');
+  // Strip primary format
+  let out = text.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/tool>/g, '');
+  // Strip secondary format
+  out = out.replace(new RegExp(`<(?:${toolNames})\\s+[^>]*?\\s*/>`, 'g'), '');
+  return out.trim();
 }
 
 /**
