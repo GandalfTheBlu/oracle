@@ -111,6 +111,12 @@
 - [x] Embedding-based tool retrieval: cosine similarity selects top-5 relevant tools, doubles as needsTools gate — agent/tools/tool_retrieval.js
 - [x] Code comprehension: code_symbols — lists functions/classes/methods/interfaces with line numbers via web-tree-sitter (WASM, no native compilation). Supports JS/TS/Python.
 
+### Milestone 2.9 — Evaluation & Hardening ✅
+- [x] tests/test_unit.js: 68 pure-logic tests (extractToolCalls, stripToolCalls, buildToolsPrompt, approval gate, run_command.dangerous(), read_file.run(), edit_file.run())
+- [x] tests/test_integration.js: 58 API-driven tests (health, /message, /message/stream SSE, /history, /reset, /state, /feedback, /approve, /memory, /reset/full, E2E tool use, multi-turn coherence)
+- [x] tests/run_tests.js: orchestrates server startup (port 3001, isolated DATA_DIR=data/test-tmp), runs both test files, cleans up
+- [x] **Bug fixed**: tools prompt format example used `<arg1>`/`<arg2>` placeholders — LLM was copying these literally instead of using real param names (path, command, etc.), causing silent failures on every tool call. Fixed by using a concrete `read_file` example in the format block.
+
 ---
 
 ## Notes / Decisions Log

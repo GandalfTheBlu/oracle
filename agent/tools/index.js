@@ -52,11 +52,10 @@ export function buildToolsPrompt(toolNames) {
     .join('\n');
 
   return `\n\n[Tools]: You MUST use tools to answer — do not describe what you would do, just call the tool immediately.
-Format (XML — no JSON, no escaping needed, values are plain text):
-<tool name="NAME">
-<arg1>value</arg1>
-<arg2>multi-line content goes here
-no escaping needed</arg2>
+Format (XML — element names are the exact parameter names from the Args list below):
+<tool name="read_file">
+<path>/some/file.txt</path>
+<offset>0</offset>
 </tool>
 Args:
 ${argsList}
