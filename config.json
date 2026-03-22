@@ -3,6 +3,10 @@
     "port": 3000,
     "dataDir": "data"
   },
+  "reflection": {
+    "enabled": true,
+    "onToolsOnly": true
+  },
   "llm": {
     "serverHost": "192.168.0.208",
     "port": 8080,

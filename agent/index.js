@@ -24,6 +24,7 @@ import { logInteraction, recordFeedback, getLearningStats } from './learning.js'
 import { shouldEvolve, runEvolution, applyEvolution } from './evolution.js';
 import { TOOLS, TOOLS_SCHEMA } from './tools/index.js';
 import { requestApproval } from './approval.js';
+import { reflect } from './reflection.js';
 import {
   listMemories,
   getMemory,
@@ -272,6 +273,11 @@ export class Agent {
       reply = await chatCompletion(workingMessages, { maxTokens: 1024 });
     }
 
+    // Reflection pass: validate reply against tool outputs, correct if needed.
+    const correction = await reflect(userMessage, reply, toolActivity.length ? toolActivity : null, chatCompletion)
+      .catch(err => { console.warn('[agent] Reflection failed:', err.message); return null; });
+    if (correction) reply = correction;
+
     this.lastToolActivity = toolActivity.length ? toolActivity : null;
 
     const stats = await this._finish(userMessage, reply, {
@@ -321,11 +327,19 @@ export class Agent {
         reply = loopReply;
         onToken(reply);
       } else {
-        // Tool rounds ran; stream the final prose reply.
+        // Tool rounds ran.
+        // Collect the full reply before emitting — reflection needs the complete text
+        // before the user sees anything, so we can correct it without a visible retraction.
+        let collected = '';
         for await (const token of chatCompletionStream(workingMessages, { maxTokens: 1024 })) {
-          reply += token;
-          onToken(token);
+          collected += token;
         }
+
+        // Reflection pass: validate against tool outputs.
+        const correction = await reflect(userMessage, collected, toolActivity, chatCompletion)
+          .catch(err => { console.warn('[agent] Reflection failed:', err.message); return null; });
+        reply = correction ?? collected;
+        onToken(reply);
       }
     } catch (err) {
       onError(err);
