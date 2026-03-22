@@ -1,8 +1,60 @@
 # Oracle — Plan
 
 ## Current Status
-**Phase:** Phase 1 complete → Phase 2 — Tool Integrations
-**Last session:** All Phase 1 milestones done. Oracle has: persistent history, context compaction, vector memory (episodic + semantic), personality system, user model, internal reasoning, and learning/feedback logging.
+**Phase:** Phase 2 complete → Phase 3 — Intelligence & Partnership
+**Last session:** Phase 2 done. Oracle has: full dev tool suite, streaming, approval gating, dual-format tool parser (handles Qwen native format), test harness (126 tests), environment isolation (ports 3000/3001/3002), history restored on page reload. Running Qwen2.5-Coder-7B-Instruct Q8_0 at 8192 context.
+
+---
+
+## Phase 3 — Intelligence & Partnership (priority order)
+
+### Milestone 3.1 — Personality & User Model Evaluation
+Deep evaluation of whether Oracle actually builds an accurate model of the user and develops personality over time.
+- [ ] Define a fake persona (name, job, preferences, communication style, quirks)
+- [ ] Run a structured interaction session as that persona: casual chat, preferences stated, tasks done, corrections given
+- [ ] Audit: what memories were stored, what user model fields updated, how personality observations evolved
+- [ ] Evaluate response quality: does Oracle adapt tone/style/content to the persona over the session?
+- [ ] Document findings and fix gaps in memory extraction, user model updates, or personality evolution
+
+### Milestone 3.2 — Self-Reflection / Validation Loop
+Post-response reflection pass leveraging the faster 7B model.
+- [ ] After generating a reply, run a lightweight second LLM pass: "Does this fully answer the question? Did I verify tool outputs? Is anything missing?"
+- [ ] If reflection flags an issue, retry or append a correction before sending
+- [ ] Particularly valuable for tool use: catches "wrote file but never verified content", "ran command but didn't check output"
+- [ ] Configurable: reflection only when tools were used, or always
+
+### Milestone 3.3 — Cross-Context Awareness
+Oracle knows your current situation without being told.
+- [ ] On startup/each turn, scan recent git log, last modified files in watched dirs, optional "current focus" file
+- [ ] Build a situational summary injected into context: what project, what branch, recent changes
+- [ ] User can configure watched paths in config.json
+
+### Milestone 3.4 — Proactive Behavior
+Oracle surfaces relevant observations without being asked.
+- [ ] Background scheduler (configurable interval) checks watched sources: git, file changes, a watch list
+- [ ] If something noteworthy detected, queues a proactive message shown in UI
+- [ ] Needs careful design to avoid being annoying — threshold/cooldown controls
+
+### Milestone 3.5 — Text-to-Speech (local agent voice)
+Give Oracle a voice while keeping everything local, GPU stays free for LLM.
+- [ ] Evaluate local TTS options: Kokoro, Piper, Coqui — pick best quality/speed tradeoff on CPU
+- [ ] Add TTS endpoint or run as sidecar process
+- [ ] UI: auto-play assistant responses as audio, toggle on/off
+- [ ] Optional: configurable voice to match Oracle's personality
+
+### Milestone 3.6 — Goal Tracking & Autonomous Execution
+Oracle maintains explicit goals and drives toward them across sessions.
+- [ ] Persistent goal/task model: user states goals, Oracle tracks progress
+- [ ] Multi-step plans executed autonomously with progress reporting between steps
+- [ ] Depends on 3.2 (validation) and 3.3 (context awareness) working well first
+
+### Milestone 3.7 — Vision / Multi-Modal Input (low priority)
+Wire up the existing vision endpoint (`:8082`, already configured).
+- [ ] Inject image descriptions into context when user pastes an image
+- [ ] UI: image upload or paste support
+- [ ] Note: limited value — essentially image-to-text description injected as context
+
+---
 
 ---
 
@@ -130,9 +182,10 @@
 
 ## Notes / Decisions Log
 - Endpoints run on separate PC at `192.168.0.208` (local network). Config in `config.json`.
-- LLM: `:8080` — Qwen2.5-Coder-14B, context 4096, `--jinja`, OpenAI-compatible API
-- Embedding: `:8081` — nomic-embed-text-v1.5, context 512, OpenAI-compatible API
+- LLM: `:8080` — Qwen2.5-Coder-7B-Instruct Q8_0, context 8192, `--jinja`, OpenAI-compatible API
+- Embedding: `:8081` — nomic-embed-text-v1.5.Q8_0, context 512, OpenAI-compatible API
 - Vision (`:8082`) and image gen (`:8188` ComfyUI) — present in config but inactive until further notice
+- Environment: port 3000 = production (`data/`), port 3001 = tests (`data/test-tmp/`), port 3002 = eval (`data/eval-tmp/`)
 - UI: vanilla JS unless a specific need justifies a framework
 - Evaluation method: Claude Code posts to Agent API and assesses responses directly
 - Shell: PowerShell (`pwsh` / `powershell.exe` fallback). run_command detects which is available at startup.
