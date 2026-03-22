@@ -28,6 +28,7 @@ export async function reason(userMessage, systemPrompt, contextMessages, toolsCo
         '\n\n[Internal reasoning mode]: You are thinking through your response privately before replying. ' +
         'Consider: What is the user really asking? What do you know that is relevant? ' +
         'What would be the most useful and honest response? Are there any caveats or things to push back on? ' +
+        'If the task requires action (reading/editing files, running code, etc.), plan to do it with tools — do not describe how it could be done. ' +
         'Keep your reasoning concise (3-5 sentences). Do NOT write the actual reply yet — just think it through.',
     },
     ...contextMessages,

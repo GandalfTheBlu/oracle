@@ -52,7 +52,7 @@ export function buildToolsPrompt(toolNames) {
 
   return `\n\n[Tools available — use them when the task genuinely requires it]:
 Call a tool only if the task requires reading/writing files, running commands, searching code, or fetching URLs.
-For conversational messages or questions you can answer from knowledge, respond directly without calling any tools.
+For pure conversation or conceptual/factual questions with no file/code/URL involved, respond directly without calling any tools.
 Format (XML — element names are the exact parameter names from the Args list below):
 <tool name="read_file">
 <path>/some/file.txt</path>
