@@ -18,9 +18,17 @@ const BASE_URL = `http://${serverHost}:${port}`;
  * @returns {Promise<string|{content:string, tool_calls:Array, finish_reason:string}>}
  */
 export async function chatCompletion(messages, opts = {}) {
-  const { maxTokens = 512, temperature = 0.7, tools } = opts;
+  const { maxTokens = 512, temperature = 0.7, tools, thinking = false } = opts;
 
-  const body = { model: 'local', messages, max_tokens: maxTokens, temperature };
+  // Qwen3 thinking mode: prepend /think or /no_think to the system message.
+  // Server default is /no_think (--reasoning-budget 0), so we only need to
+  // inject /think when explicitly requested.
+  let msgs = messages;
+  if (thinking && msgs.length > 0 && msgs[0].role === 'system') {
+    msgs = [{ ...msgs[0], content: `/think\n${msgs[0].content}` }, ...msgs.slice(1)];
+  }
+
+  const body = { model: 'local', messages: msgs, max_tokens: maxTokens, temperature };
   if (tools?.length) {
     body.tools = tools;
     body.tool_choice = 'auto';
@@ -62,14 +70,19 @@ export async function chatCompletion(messages, opts = {}) {
  * @yields {string} token deltas
  */
 export async function* chatCompletionStream(messages, opts = {}) {
-  const { maxTokens = 1024, temperature = 0.7 } = opts;
+  const { maxTokens = 1024, temperature = 0.7, thinking = false } = opts;
+
+  let msgs = messages;
+  if (thinking && msgs.length > 0 && msgs[0].role === 'system') {
+    msgs = [{ ...msgs[0], content: `/think\n${msgs[0].content}` }, ...msgs.slice(1)];
+  }
 
   const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'local',
-      messages,
+      messages: msgs,
       max_tokens: maxTokens,
       temperature,
       stream: true,

@@ -19,12 +19,10 @@ import {
   updateUserModel,
   buildUserModelPrompt,
 } from './usermodel.js';
-import { reason } from './reasoning.js';
 import { logInteraction, recordFeedback, getLearningStats } from './learning.js';
 import { shouldEvolve, runEvolution, applyEvolution } from './evolution.js';
 import { TOOLS, TOOLS_SCHEMA } from './tools/index.js';
 import { requestApproval } from './approval.js';
-import { reflect } from './reflection.js';
 import { buildSituationalContext } from './context_awareness.js';
 import { extractGoal, listGoals, getGoal, createGoal, updateGoal, deleteGoal } from './goals.js';
 import { executeGoal as runGoalExecution } from './executor.js';
@@ -36,10 +34,11 @@ import {
 } from './memory.js';
 
 const BASE_SYSTEM_PROMPT = `You are Oracle, a personal AI assistant in the spirit of JARVIS from Iron Man. \
-You are thoughtful, direct, and develop a genuine rapport with the user over time. \
-You are concise by default but elaborate when the topic warrants it. \
-You remember the conversation and refer back to it naturally. \
-When asked to do something, do it — use your tools to act rather than explaining how it could be done.`;
+You are direct, confident, and develop a genuine rapport with the user over time. \
+You have a dry, understated wit — you use it sparingly. \
+When a task requires action — reading files, writing code, running commands — do it immediately with your tools. Never describe what could be done. Do it. \
+Never claim to have read, written, or executed anything unless your tool results confirm it. \
+If the user challenges a factually correct statement, explain your reasoning clearly. Do not apologize for correct answers.`;
 
 /** Max tool execution rounds per turn (prevents infinite loops). */
 const MAX_TOOL_ROUNDS = 5;
@@ -86,53 +85,32 @@ export class Agent {
     this.history.push({ role: 'user', content: userMessage });
     recordInteraction(this.personality);
 
-    // System prompt carries identity/personality/user model, and situational context.
-    // Tools are injected fresh as a user message at each LLM call (see _runToolLoop).
-    const systemPrompt =
-      BASE_SYSTEM_PROMPT +
-      buildPersonalityPrompt(this.personality) +
-      buildUserModelPrompt(this.userModel) +
-      buildSituationalContext();
-
-    let memoryBlock = '';
+    // Memories, personality, and user model all go into the single system prompt.
+    // Qwen3's improved instruction following means one model can handle everything.
     let memoriesInjected = 0;
+    let memoryBlock = '';
     try {
       const memories = await retrieveMemories(userMessage);
+      memoriesInjected = memories.length;
       if (memories.length > 0) {
-        memoryBlock =
-          '\n\n[Relevant memories from past interactions]:\n' +
-          memories.map(m => `- (${m.type}) ${m.text}`).join('\n');
-        memoriesInjected = memories.length;
+        memoryBlock = '\n\n[Relevant memories from past interactions]:\n' +
+          memories.map(m => `- ${m.text}`).join('\n');
       }
     } catch (err) {
       console.warn('[agent] Memory retrieval failed:', err.message);
     }
 
-    // Build a preliminary context to feed the reasoning pass.
-    // Inject all tools into the reasoning pass so it can plan with full awareness
-    // of what's available — but this injection is transient and never saved to history.
-    const prelimContextMessages = await buildContext(this.history, systemPrompt + memoryBlock, userMessage);
+    const systemPrompt =
+      BASE_SYSTEM_PROMPT +
+      buildPersonalityPrompt(this.personality) +
+      buildUserModelPrompt(this.userModel) +
+      buildSituationalContext() +
+      memoryBlock;
 
-    let internalReasoning = '';
-    try {
-      internalReasoning = await reason(
-        userMessage,
-        systemPrompt + memoryBlock,
-        prelimContextMessages,
-      );
-    } catch (err) {
-      console.warn('[agent] Reasoning pass failed:', err.message);
-    }
-
-    const reasoningNote = internalReasoning
-      ? `\n\n[Your internal reasoning]: ${internalReasoning}\nNow give your actual reply:`
-      : '';
-
-    const fullSystemContent = systemPrompt + memoryBlock + reasoningNote;
-    const contextMessages = await buildContext(this.history, fullSystemContent, userMessage);
+    const contextMessages = await buildContext(this.history, systemPrompt, userMessage);
 
     const workingMessages = [
-      { role: 'system', content: fullSystemContent },
+      { role: 'system', content: systemPrompt },
       ...contextMessages,
     ];
 
@@ -144,14 +122,14 @@ export class Agent {
       console.log('[agent] Correction detected — appended retry directive to user message.');
     }
 
-    return { contextMessages, workingMessages, memoriesInjected, internalReasoning };
+    return { contextMessages, workingMessages, memoriesInjected };
   }
 
   /**
    * Shared post-turn bookkeeping: save history, log interaction, background updates.
    * @private
    */
-  async _finish(userMessage, reply, { contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors }) {
+  async _finish(userMessage, reply, { contextMessages, workingMessages, memoriesInjected, toolsUsed, toolErrors }) {
     this.history.push({ role: 'assistant', content: reply });
     saveHistory(this.history);
     savePersonality(this.personality);
@@ -161,7 +139,6 @@ export class Agent {
       id: turnId,
       userMessage,
       reply,
-      reasoning: internalReasoning,
       toolsUsed,
       contextStats: {
         totalMessages: this.history.length,
@@ -193,7 +170,6 @@ export class Agent {
       memoriesInjected,
       familiarity: this.personality.relationship.familiarity,
       interactionCount: this.personality.relationship.interactionCount,
-      hasReasoning: !!internalReasoning,
       toolsUsed,
       toolErrors: toolErrors.length ? toolErrors : undefined,
     };
@@ -209,8 +185,13 @@ export class Agent {
    */
   async _runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired = null) {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      // Pass tools schema on every call — llama.cpp renders it via jinja template.
-      const response = await chatCompletion(workingMessages, { maxTokens: 1024, tools: TOOLS_SCHEMA });
+      // Round 0: enable thinking mode so Qwen3 plans before acting.
+      // Subsequent rounds: fast mode — planning is done, just process results.
+      const response = await chatCompletion(workingMessages, {
+        maxTokens: round === 0 ? 2048 : 1024,
+        tools: TOOLS_SCHEMA,
+        thinking: round === 0,
+      });
 
       if (!response.tool_calls?.length) {
         // Model produced prose — we're done.
@@ -267,26 +248,20 @@ export class Agent {
    */
   async chat(userMessage) {
     const prepared = await this._prepare(userMessage);
-    const { contextMessages, workingMessages, memoriesInjected, internalReasoning } = prepared;
+    const { contextMessages, workingMessages, memoriesInjected } = prepared;
 
     const toolsUsed = [], toolErrors = [], toolActivity = [];
-    // Tools are always injected fresh inside _runToolLoop — no needsTools gate needed.
     let reply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity);
 
     if (!reply) {
-      // Rounds exhausted — do a final prose call to summarise what happened.
+      // Tool rounds exhausted — get final prose summary.
       reply = await chatCompletion(workingMessages, { maxTokens: 1024 });
     }
-
-    // Reflection pass: validate reply against tool outputs, correct if needed.
-    const correction = await reflect(userMessage, reply, toolActivity.length ? toolActivity : null, chatCompletion)
-      .catch(err => { console.warn('[agent] Reflection failed:', err.message); return null; });
-    if (correction) reply = correction;
 
     this.lastToolActivity = toolActivity.length ? toolActivity : null;
 
     const stats = await this._finish(userMessage, reply, {
-      contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
+      contextMessages, workingMessages, memoriesInjected, toolsUsed, toolErrors,
     });
 
     return {
@@ -316,35 +291,25 @@ export class Agent {
       return;
     }
 
-    const { contextMessages, workingMessages, memoriesInjected, internalReasoning } = prepared;
+    const { contextMessages, workingMessages, memoriesInjected } = prepared;
     const toolsUsed = [], toolErrors = [], toolActivity = [];
     let reply = '';
 
     try {
-      // Always run the tool loop — tools are injected fresh inside it.
-      // If the LLM doesn't call any tools, the loop returns the prose reply immediately.
       const loopReply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired);
 
       if (toolActivity.length) onTool(toolActivity);
 
       if (loopReply) {
-        // LLM produced prose without calling tools — emit as a single block.
+        // Model gave prose on round 0 (no tools needed) — emit directly.
         reply = loopReply;
         onToken(reply);
       } else {
-        // Tool rounds ran.
-        // Collect the full reply before emitting — reflection needs the complete text
-        // before the user sees anything, so we can correct it without a visible retraction.
-        let collected = '';
+        // Tools ran — stream the final prose response.
         for await (const token of chatCompletionStream(workingMessages, { maxTokens: 1024 })) {
-          collected += token;
+          reply += token;
+          onToken(token);
         }
-
-        // Reflection pass: validate against tool outputs.
-        const correction = await reflect(userMessage, collected, toolActivity, chatCompletion)
-          .catch(err => { console.warn('[agent] Reflection failed:', err.message); return null; });
-        reply = correction ?? collected;
-        onToken(reply);
       }
     } catch (err) {
       onError(err);
@@ -356,7 +321,7 @@ export class Agent {
     this.lastToolActivity = toolActivity.length ? toolActivity : null;
 
     const stats = await this._finish(userMessage, reply, {
-      contextMessages, workingMessages, memoriesInjected, internalReasoning, toolsUsed, toolErrors,
+      contextMessages, workingMessages, memoriesInjected, toolsUsed, toolErrors,
     });
 
     onDone(stats);
