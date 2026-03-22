@@ -7,6 +7,13 @@
     "enabled": true,
     "onToolsOnly": true
   },
+  "contextAwareness": {
+    "enabled": true,
+    "watchedDirs": ["C:/oracle", "C:/sandbox"],
+    "recentFileHours": 2,
+    "maxRecentFiles": 5,
+    "focusFile": "C:/oracle/.oracle-focus"
+  },
   "llm": {
     "serverHost": "192.168.0.208",
     "port": 8080,

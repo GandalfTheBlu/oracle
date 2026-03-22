@@ -25,6 +25,7 @@ import { shouldEvolve, runEvolution, applyEvolution } from './evolution.js';
 import { TOOLS, TOOLS_SCHEMA } from './tools/index.js';
 import { requestApproval } from './approval.js';
 import { reflect } from './reflection.js';
+import { buildSituationalContext } from './context_awareness.js';
 import {
   listMemories,
   getMemory,
@@ -83,12 +84,13 @@ export class Agent {
     this.history.push({ role: 'user', content: userMessage });
     recordInteraction(this.personality);
 
-    // System prompt carries identity/personality/user model only — no tools.
+    // System prompt carries identity/personality/user model, and situational context.
     // Tools are injected fresh as a user message at each LLM call (see _runToolLoop).
     const systemPrompt =
       BASE_SYSTEM_PROMPT +
       buildPersonalityPrompt(this.personality) +
-      buildUserModelPrompt(this.userModel);
+      buildUserModelPrompt(this.userModel) +
+      buildSituationalContext();
 
     let memoryBlock = '';
     let memoriesInjected = 0;
