@@ -24,8 +24,14 @@ const integrationOnly = args.includes('--integration-only');
 const runUnit         = !integrationOnly;
 const runIntegration  = !unitOnly;
 
-const TEST_DATA_DIR = join(ROOT, 'data', 'test-tmp');
-const API_PORT = 3001; // Use a separate port so tests don't clobber the real server
+// All isolated data dirs live inside .oracle/ so they're gitignored and
+// co-located with the production workspace data.
+const ORACLE_DIR    = join(ROOT, '.oracle');
+const TEST_DATA_DIR = join(ORACLE_DIR, 'test');
+const EVAL_DATA_DIR = join(ORACLE_DIR, 'eval');
+
+const API_PORT = 3001; // tests
+// Port 3002 reserved for Claude Code eval sessions (DATA_DIR=EVAL_DATA_DIR)
 
 function log(msg) { console.log(`\x1b[36m[runner]\x1b[0m ${msg}`); }
 function err(msg) { console.error(`\x1b[31m[runner]\x1b[0m ${msg}`); }
