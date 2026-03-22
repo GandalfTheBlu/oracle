@@ -91,33 +91,84 @@
 
     .tool-block details {
       background: #111;
-      border: 1px solid #1e3a1e;
+      border: 1px solid #222;
       border-radius: 6px;
       margin-bottom: 4px;
+      overflow: hidden;
     }
 
     .tool-block summary {
       padding: 0.3rem 0.7rem;
       cursor: pointer;
-      color: #5db85d;
       user-select: none;
       list-style: none;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      white-space: nowrap;
+      overflow: hidden;
     }
 
-    .tool-block summary::before { content: '⚙ '; }
+    .tool-name  { color: #5db85d; flex-shrink: 0; }
+    .tool-sep   { color: #333; flex-shrink: 0; }
+    .tool-detail {
+      color: #555;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      min-width: 0;
+    }
 
     .tool-block pre {
       padding: 0.5rem 0.7rem;
-      color: #aaa;
+      color: #888;
       overflow-x: auto;
       white-space: pre-wrap;
       word-break: break-all;
       margin: 0;
-      border-top: 1px solid #1e3a1e;
-      font-size: 0.75rem;
-      max-height: 200px;
+      border-top: 1px solid #1a1a1a;
+      font-size: 0.73rem;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      max-height: 220px;
       overflow-y: auto;
     }
+
+    .tool-block pre.error { color: #e07070; }
+    .tool-block pre.denied { color: #e07070; font-style: italic; }
+
+    /* Diff view for edit_file */
+    .diff-view {
+      border-top: 1px solid #1a1a1a;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 0.73rem;
+      max-height: 300px;
+      overflow-y: auto;
+      overflow-x: auto;
+    }
+
+    .diff-line {
+      display: flex;
+      align-items: baseline;
+      padding: 0.08rem 0.5rem;
+      line-height: 1.65;
+    }
+
+    .diff-removed { background: rgba(239, 68, 68, 0.1); }
+    .diff-added   { background: rgba(74, 222, 128, 0.08); }
+
+    .diff-sign {
+      width: 1.2rem;
+      flex-shrink: 0;
+      font-size: 0.8rem;
+    }
+    .diff-removed .diff-sign { color: #f87171; }
+    .diff-added   .diff-sign { color: #4ade80; }
+
+    .diff-text { white-space: pre; }
+    .diff-removed .diff-text { color: #fca5a5; }
+    .diff-added   .diff-text { color: #86efac; }
 
     #input-row {
       display: flex;
@@ -397,6 +448,10 @@
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('send');
 
+    function escHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
     function addMsg(role, text) {
       const div = document.createElement('div');
       div.className = `msg ${role}`;
@@ -406,21 +461,73 @@
       return div;
     }
 
+    function toolLabel(tool, args) {
+      const path = args.path || '';
+      const file = path.split(/[/\\]/).pop() || path;
+      switch (tool) {
+        case 'read_file':    return { name: 'read',    detail: file + (args.offset != null ? ` +${args.offset}` : '') };
+        case 'write_file':   return { name: 'write',   detail: file };
+        case 'edit_file':    return { name: 'edit',    detail: file };
+        case 'run_command':  return { name: '$',        detail: (args.command || '').slice(0, 80) };
+        case 'search_regex': return { name: 'search',  detail: `"${(args.pattern || '').slice(0, 50)}"` };
+        case 'code_symbols': return { name: 'symbols', detail: file };
+        case 'web_fetch':    return { name: 'fetch',   detail: (args.url || '').replace(/^https?:\/\//, '').slice(0, 60) };
+        default:             return { name: tool,      detail: '' };
+      }
+    }
+
+    function buildDiff(oldStr, newStr) {
+      const el = document.createElement('div');
+      el.className = 'diff-view';
+      for (const line of (oldStr || '').split('\n')) {
+        const row = document.createElement('div');
+        row.className = 'diff-line diff-removed';
+        row.innerHTML = `<span class="diff-sign">-</span><span class="diff-text">${escHtml(line)}</span>`;
+        el.appendChild(row);
+      }
+      for (const line of (newStr || '').split('\n')) {
+        const row = document.createElement('div');
+        row.className = 'diff-line diff-added';
+        row.innerHTML = `<span class="diff-sign">+</span><span class="diff-text">${escHtml(line)}</span>`;
+        el.appendChild(row);
+      }
+      return el;
+    }
+
     function addToolActivity(activity) {
-      if (!activity || activity.length === 0) return;
+      if (!activity?.length) return;
       const wrapper = document.createElement('div');
       wrapper.className = 'tool-block';
-      for (const { tool, args, result } of activity) {
+
+      for (const { tool, args = {}, result, denied } of activity) {
         const details = document.createElement('details');
+        if (tool === 'edit_file' && !denied) details.open = true;
+
         const summary = document.createElement('summary');
-        const argsStr = Object.entries(args || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ');
-        summary.textContent = `${tool}(${argsStr})`;
-        const pre = document.createElement('pre');
-        pre.textContent = result || '(no output)';
+        const { name, detail } = toolLabel(tool, args);
+        summary.innerHTML =
+          `<span class="tool-name">${escHtml(name)}</span>` +
+          (detail ? `<span class="tool-sep">·</span><span class="tool-detail">${escHtml(detail)}</span>` : '');
         details.appendChild(summary);
-        details.appendChild(pre);
+
+        let body;
+        if (tool === 'edit_file' && args.old_string != null && args.new_string != null && !denied) {
+          body = buildDiff(args.old_string, args.new_string);
+        } else {
+          body = document.createElement('pre');
+          if (denied) {
+            body.className = 'denied';
+            body.textContent = '✗ denied';
+          } else {
+            const text = result || '(no output)';
+            body.className = text.startsWith('ERROR:') ? 'error' : '';
+            body.textContent = text;
+          }
+        }
+        details.appendChild(body);
         wrapper.appendChild(details);
       }
+
       log.appendChild(wrapper);
       log.scrollTop = log.scrollHeight;
     }
@@ -642,10 +749,6 @@
       } catch (e) {
         addMsg('system', `Delete failed: ${e.message}`);
       }
-    }
-
-    function escHtml(str) {
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     document.getElementById('memory-btn').addEventListener('click', () => {
