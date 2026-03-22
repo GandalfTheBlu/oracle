@@ -11,6 +11,10 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "vectra": "^0.12.3"
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "vectra": "^0.12.3",
+    "web-tree-sitter": "^0.26.7"
   }
 }

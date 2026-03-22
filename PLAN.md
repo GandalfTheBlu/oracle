@@ -98,11 +98,18 @@
 - [x] Multi-turn tool correction: CORRECTION_PATTERNS detect "wrong/retry/try again", append retry directive to user message, tool re-called with corrected args
 - [x] lastToolActivity tracked per turn, cleared on reset
 
-### Milestone 2.7 — Dev Tool Enhancements (planned)
-- [ ] File edit tool: replace old string → new string (more reliable than line numbers)
-- [ ] File chunk reading: read_file with offset+limit to handle large files without blowing context
-- [ ] Tree-sitter integration: code structure comprehension (list symbols, find definitions)
-- [ ] Tests for all of the above
+### Milestone 2.8 — Tool & Memory Quality (complete)
+- [x] XML tool format: `<tool name="NAME"><arg>value</arg></tool>` — no JSON escaping, free-text values, auto coercion of numbers/booleans
+- [x] Dangerous tool approval: write_file, edit_file, run_command, git (write ops) require user Allow/Deny before executing; SSE `approval_required` event + UI card + POST /approve/:id
+- [x] Embedding-based tool retrieval: replaces keyword queryNeedsTools (done in 2.7), now also drives needsTools gate via max similarity threshold
+- [x] Memory quality filter: two-gate extraction (category gate + score ≥ 4); dropped episodic copy-of-conversation; categories: USER_PREFERENCE, USER_FACT, BEHAVIORAL_CORRECTION, PROJECT_DECISION; memory panel shows category badges
+
+### Milestone 2.7 — Dev Tool Enhancements ✅
+- [x] File edit tool: replace old string → new string — agent/tools/edit_file.js
+- [x] File chunk reading: read_file with offset+limit
+- [x] Search tool: search_regex — file names + contents, maxDepth (cap 10), maxResults (cap 200)
+- [x] Embedding-based tool retrieval: cosine similarity selects top-5 relevant tools, doubles as needsTools gate — agent/tools/tool_retrieval.js
+- [x] Code comprehension: code_symbols — lists functions/classes/methods/interfaces with line numbers via web-tree-sitter (WASM, no native compilation). Supports JS/TS/Python.
 
 ---
 
@@ -113,3 +120,5 @@
 - Vision (`:8082`) and image gen (`:8188` ComfyUI) — present in config but inactive until further notice
 - UI: vanilla JS unless a specific need justifies a framework
 - Evaluation method: Claude Code posts to Agent API and assesses responses directly
+- Shell: PowerShell (`pwsh` / `powershell.exe` fallback). run_command detects which is available at startup.
+- Tool set: read_file, write_file, edit_file, run_command, search_regex, web_fetch (6 total). list_dir/search_files/git removed — covered by run_command. web_read_chunk/web_search_page removed — web_fetch saves to a path, agent reads/searches via existing file tools.

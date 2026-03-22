@@ -24,11 +24,12 @@ import { logInteraction, recordFeedback, getLearningStats } from './learning.js'
 import { shouldEvolve, runEvolution, applyEvolution } from './evolution.js';
 import {
   buildToolsPrompt,
-  queryNeedsTools,
+  retrieveRelevantTools,
   extractToolCalls,
   stripToolCalls,
-  executeToolCalls,
+  TOOLS,
 } from './tools/index.js';
+import { requestApproval } from './approval.js';
 import {
   listMemories,
   getMemory,
@@ -74,12 +75,12 @@ export class Agent {
     this.history.push({ role: 'user', content: userMessage });
     recordInteraction(this.personality);
 
-    const needsTools = queryNeedsTools(userMessage);
+    const { toolNames, needsTools } = await retrieveRelevantTools(userMessage, TOOLS);
     const systemPrompt =
       BASE_SYSTEM_PROMPT +
       buildPersonalityPrompt(this.personality) +
       buildUserModelPrompt(this.userModel) +
-      (needsTools ? buildToolsPrompt() : '');
+      (needsTools ? buildToolsPrompt(toolNames) : '');
 
     let memoryBlock = '';
     let memoriesInjected = 0;
@@ -180,9 +181,12 @@ export class Agent {
   /**
    * Run the tool execution loop (blocking). Returns reply if the loop produced one,
    * or null if all rounds used tools (caller should stream the final reply).
+   *
+   * @param {Function|null} onApprovalRequired  Called with {id, tool, args} before
+   *   executing dangerous tools. If null, dangerous tools run without approval.
    * @private
    */
-  async _runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity) {
+  async _runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired = null) {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const raw = await chatCompletion(workingMessages, { maxTokens: 1024 });
       const calls = extractToolCalls(raw);
@@ -192,23 +196,47 @@ export class Agent {
       }
 
       toolsUsed.push(...calls.map(c => c.name));
-      const { output: toolResults, errors: roundErrors } = await executeToolCalls(calls);
-      if (roundErrors.length) toolErrors.push(...roundErrors);
       console.log(`[agent] Tool round ${round + 1}: ${calls.map(c => c.name).join(', ')}`);
 
-      const resultBlocks = toolResults.split('\n\n');
-      calls.forEach((call, i) => {
-        toolActivity.push({
-          tool: call.name,
-          args: call.args,
-          result: (resultBlocks[i] || '').replace(/^\[tool: [^\]]+\]\n/, ''),
-        });
-      });
+      const resultParts = [];
+      for (const call of calls) {
+        const tool = TOOLS[call.name];
+
+        // Check if approval is required for this call
+        if (onApprovalRequired && tool) {
+          const dangerCheck = typeof tool.dangerous === 'function'
+            ? tool.dangerous(call.args)
+            : !!tool.dangerous;
+
+          if (dangerCheck) {
+            const { id, promise } = requestApproval(call.name, call.args);
+            onApprovalRequired({ id, tool: call.name, args: call.args });
+            const approved = await promise;
+            if (!approved) {
+              const msg = 'User denied execution.';
+              resultParts.push(`[tool: ${call.name}]\n${msg}`);
+              toolActivity.push({ tool: call.name, args: call.args, result: msg, denied: true });
+              continue;
+            }
+          }
+        }
+
+        try {
+          const output = await tool.run(call.args);
+          resultParts.push(`[tool: ${call.name}]\n${output}`);
+          toolActivity.push({ tool: call.name, args: call.args, result: output });
+        } catch (err) {
+          toolErrors.push(`${call.name}: ${err.message}`);
+          const msg = `ERROR: ${err.message}`;
+          resultParts.push(`[tool: ${call.name}]\n${msg}`);
+          toolActivity.push({ tool: call.name, args: call.args, result: msg });
+        }
+      }
 
       workingMessages.push({ role: 'assistant', content: raw });
       workingMessages.push({
         role: 'user',
-        content: `[Tool results]:\n${toolResults}\n\nNow give your final response to the user based on these results.`,
+        content: `[Tool results]:\n${resultParts.join('\n\n')}\n\nNow give your final response to the user based on these results.`,
       });
     }
     return null; // exhausted rounds without a prose reply
@@ -253,7 +281,7 @@ export class Agent {
    * Tool rounds run blocking (they produce short tool-call syntax, not prose).
    * The final prose reply is streamed.
    */
-  async chatStream(userMessage, { onToken, onTool, onDone, onError }) {
+  async chatStream(userMessage, { onToken, onTool, onDone, onError, onApprovalRequired = null }) {
     let prepared;
     try {
       prepared = await this._prepare(userMessage);
@@ -270,7 +298,7 @@ export class Agent {
       if (needsTools) {
         // Run tool rounds (blocking). If the loop returns a reply, it means the
         // LLM produced prose before any tool calls — use it directly (no stream).
-        const loopReply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity);
+        const loopReply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired);
 
         if (toolActivity.length) onTool(toolActivity);
 

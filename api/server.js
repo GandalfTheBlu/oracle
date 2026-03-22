@@ -8,6 +8,7 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { Agent } from '../agent/index.js';
+import { resolveApproval } from '../agent/approval.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -74,11 +75,26 @@ app.post('/message/stream', async (req, res) => {
   const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   await agent.chatStream(message.trim(), {
-    onToken: (text) => send({ type: 'token', text }),
-    onTool:  (activity) => send({ type: 'tool', activity }),
-    onDone:  (stats) => { send({ type: 'done', stats }); res.end(); },
-    onError: (err) => { send({ type: 'error', message: err.message }); res.end(); },
+    onToken:            (text)     => send({ type: 'token', text }),
+    onTool:             (activity) => send({ type: 'tool', activity }),
+    onApprovalRequired: (request)  => send({ type: 'approval_required', ...request }),
+    onDone:             (stats)    => { send({ type: 'done', stats }); res.end(); },
+    onError:            (err)      => { send({ type: 'error', message: err.message }); res.end(); },
   });
+});
+
+// ── Tool approval ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /approve/:id
+ * Body: { "approved": true|false }
+ * Resolves a pending tool approval request.
+ */
+app.post('/approve/:id', (req, res) => {
+  const { approved } = req.body;
+  const ok = resolveApproval(req.params.id, !!approved);
+  if (!ok) return res.status(404).json({ error: 'Approval request not found or already resolved' });
+  res.json({ status: 'ok' });
 });
 
 // ── Get conversation history ──────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { normalizePath } from './utils.js';
 
 export const writeFile = {
   description: 'Write content to a file (creates or overwrites). Args: { path: string, content: string }',
+  dangerous: true,
 
   async run({ path, content }) {
     if (!path) throw new Error('path is required');

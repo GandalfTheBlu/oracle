@@ -114,8 +114,14 @@ export async function retrieveMemories(query) {
 
 /**
  * Extract and store memories from a completed conversation turn.
- * Called after the LLM replies. Stores the user message as episodic memory
- * and lets a cheap LLM pass decide if there are semantic facts to store.
+ *
+ * Uses a single LLM pass with a two-gate filter:
+ *   Gate 1 — category: only extract if the content clearly belongs to a
+ *             high-value category (preference, fact, correction, decision).
+ *   Gate 2 — score: only store if the future utility score is 4 or 5 out of 5.
+ *
+ * Episodic "copy of conversation" storage has been removed — the persistent
+ * history file already covers this. Only genuinely cross-session facts are kept.
  *
  * @param {string} userMessage
  * @param {string} assistantReply
@@ -123,51 +129,51 @@ export async function retrieveMemories(query) {
  * @returns {Promise<void>}
  */
 export async function extractAndStore(userMessage, assistantReply, llmCall) {
-  // Store a compact episodic memory (trimmed to 200 chars each side to control token cost).
-  const uSnip = userMessage.slice(0, 200);
-  const aSnip = assistantReply.slice(0, 200);
-  const episodic = `User: "${uSnip}" → Oracle: "${aSnip}"`;
-  await storeMemory(episodic, 'episodic');
-
-  // Ask the LLM to extract semantic facts (user preferences, stated facts, etc.).
-  // Keep it cheap: short prompt, small output.
   try {
     const extraction = await llmCall(
       [
         {
           role: 'system',
           content:
-            'You are a fact extractor. Given a conversation snippet, output a JSON array of short factual strings ' +
-            'that describe persistent facts about the user (preferences, background, goals, constraints). ' +
-            'If there are no notable facts, output an empty array []. ' +
-            'Output ONLY valid JSON — no explanation, no markdown.',
+            'You extract memories worth keeping for future conversations.\n' +
+            'Only extract if content clearly fits one of these categories:\n' +
+            '- USER_PREFERENCE: how the user wants things done (tone, format, workflow, tools, style)\n' +
+            '- USER_FACT: personal info about the user (job, projects, constraints, goals, deadlines, background)\n' +
+            '- BEHAVIORAL_CORRECTION: the user corrected or redirected the assistant\'s approach\n' +
+            '- PROJECT_DECISION: a significant technical or design decision and the reason behind it\n\n' +
+            'Do NOT extract: technical terms, generic world facts, summaries of what just happened, ' +
+            'things only relevant to this specific conversation.\n\n' +
+            'For each candidate, score 1–5: how useful would this be in a new conversation months from now?\n' +
+            'Only include items scoring 4 or 5.\n\n' +
+            'Output ONLY valid JSON: [{"category":"USER_PREFERENCE","text":"...","score":5}]\n' +
+            'If nothing qualifies, output [].',
         },
         {
           role: 'user',
-          content: `User: ${userMessage}\nOracle: ${assistantReply}`,
+          content: `User: ${userMessage}\nAssistant: ${assistantReply}`,
         },
       ],
       { maxTokens: 256, temperature: 0.1 }
     );
 
-    let facts = [];
+    let candidates = [];
     try {
-      // Strip markdown code fences if model adds them
       const cleaned = extraction.replace(/```[a-z]*\n?/gi, '').trim();
-      facts = JSON.parse(cleaned);
+      candidates = JSON.parse(cleaned);
     } catch {
-      // Non-JSON output — skip silently
+      return; // non-JSON output — skip silently
     }
 
-    if (Array.isArray(facts)) {
-      for (const fact of facts) {
-        if (typeof fact === 'string' && fact.trim()) {
-          await storeMemory(fact.trim(), 'semantic');
-        }
+    if (!Array.isArray(candidates)) return;
+
+    for (const item of candidates) {
+      if (typeof item.text === 'string' && item.text.trim() && (item.score ?? 0) >= 4) {
+        await storeMemory(item.text.trim(), 'semantic', { category: item.category });
+        console.log(`[memory] Stored (${item.category}, score=${item.score}): ${item.text.slice(0, 80)}`);
       }
     }
   } catch (err) {
-    console.warn('[memory] Semantic extraction failed:', err.message);
+    console.warn('[memory] Extraction failed:', err.message);
   }
 }
 
@@ -187,6 +193,7 @@ export async function listMemories(type = null) {
       id: item.id,
       text: item.metadata?.text ?? '',
       type: item.metadata?.type ?? 'unknown',
+      category: item.metadata?.category ?? null,
       timestamp: item.metadata?.timestamp ?? null,
     }))
     .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));

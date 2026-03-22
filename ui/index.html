@@ -299,6 +299,63 @@
       margin-top: 2rem;
       display: none;
     }
+
+    /* Tool approval cards */
+    .approval-card {
+      align-self: flex-start;
+      max-width: 75%;
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      background: #1a1200;
+      border: 1px solid #6a4a00;
+      font-size: 0.85rem;
+    }
+
+    .approval-header {
+      color: #f0a030;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .approval-args {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 0.4rem 0.6rem;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #aaa;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 0.6rem;
+    }
+
+    .approval-buttons { display: flex; gap: 0.5rem; }
+
+    .approval-allow, .approval-deny {
+      padding: 0.3rem 0.8rem;
+      border-radius: 5px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      background: none;
+      border: 1px solid;
+      transition: background 0.15s;
+    }
+    .approval-allow { color: #5db85d; border-color: #5db85d; }
+    .approval-allow:hover { background: #1a3a1a; }
+    .approval-deny  { color: #e07070; border-color: #e07070; }
+    .approval-deny:hover  { background: #3a1a1a; }
+    .approval-allow:disabled, .approval-deny:disabled { opacity: 0.4; cursor: default; }
+
+    .approval-status { font-size: 0.8rem; margin-top: 0.2rem; }
+
+    /* Memory category badges */
+    .mem-type.category-pref       { background: #2a1a3a; color: #b07ef7; }
+    .mem-type.category-fact       { background: #0d2a2a; color: #5dd0c8; }
+    .mem-type.category-correction { background: #2a1a00; color: #f0a030; }
+    .mem-type.category-decision   { background: #001a2a; color: #5ab8f7; }
   </style>
 </head>
 <body>
@@ -368,6 +425,47 @@
       log.scrollTop = log.scrollHeight;
     }
 
+    function addApprovalCard(id, tool, args) {
+      const card = document.createElement('div');
+      card.className = 'approval-card';
+
+      const argsStr = Object.entries(args || {})
+        .map(([k, v]) => {
+          const s = typeof v === 'string' ? v : JSON.stringify(v);
+          return `${k}: ${s.length > 120 ? s.slice(0, 120) + '…' : s}`;
+        })
+        .join('\n');
+
+      card.innerHTML = `
+        <div class="approval-header">⚠ Allow tool: ${escHtml(tool)}</div>
+        <div class="approval-args">${escHtml(argsStr)}</div>
+        <div class="approval-buttons">
+          <button class="approval-allow">Allow</button>
+          <button class="approval-deny">Deny</button>
+        </div>`;
+
+      log.appendChild(card);
+      log.scrollTop = log.scrollHeight;
+
+      const respond = async (approved) => {
+        card.querySelector('.approval-allow').disabled = true;
+        card.querySelector('.approval-deny').disabled = true;
+        await fetch(`${API}/approve/${encodeURIComponent(id)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved }),
+        }).catch(() => {});
+        const status = document.createElement('div');
+        status.className = 'approval-status';
+        status.style.color = approved ? '#5db85d' : '#e07070';
+        status.textContent = approved ? '✓ Allowed' : '✗ Denied';
+        card.querySelector('.approval-buttons').replaceWith(status);
+      };
+
+      card.querySelector('.approval-allow').addEventListener('click', () => respond(true));
+      card.querySelector('.approval-deny').addEventListener('click', () => respond(false));
+    }
+
     async function send() {
       const text = input.value.trim();
       if (!text) return;
@@ -426,6 +524,10 @@
                 toolInserted = true;
               }
               addToolActivity(event.activity);
+
+            } else if (event.type === 'approval_required') {
+              if (!toolInserted) { thinking.remove(); toolInserted = true; }
+              addApprovalCard(event.id, event.tool, event.args);
 
             } else if (event.type === 'done') {
               // Stream finished normally — nothing extra to do.
@@ -501,10 +603,21 @@
           item.className = 'memory-item';
           item.dataset.id = mem.id;
 
-          const typeClass = ['episodic', 'semantic'].includes(mem.type) ? mem.type : 'unknown';
+          const categoryClassMap = {
+            USER_PREFERENCE: 'category-pref',
+            USER_FACT: 'category-fact',
+            BEHAVIORAL_CORRECTION: 'category-correction',
+            PROJECT_DECISION: 'category-decision',
+          };
+          const typeClass = mem.category
+            ? (categoryClassMap[mem.category] || 'semantic')
+            : (['episodic', 'semantic'].includes(mem.type) ? mem.type : 'unknown');
+          const badgeLabel = mem.category
+            ? mem.category.toLowerCase().replace(/_/g, ' ')
+            : mem.type;
           item.innerHTML = `
             <div class="mem-body">
-              <span class="mem-type ${typeClass}">${mem.type}</span>
+              <span class="mem-type ${typeClass}">${escHtml(badgeLabel)}</span>
               <div class="mem-text">${escHtml(mem.text)}</div>
               <div class="mem-meta">${formatDate(mem.timestamp)}</div>
             </div>

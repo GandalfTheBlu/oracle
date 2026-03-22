@@ -1,94 +1,98 @@
 /**
  * Oracle Tool Registry
  *
- * Tools are invoked when the LLM emits a special directive in its response:
+ * Tools are invoked when the LLM emits a directive in its response:
  *
- *   <tool>{"name": "read_file", "args": {"path": "/some/file.js"}}</tool>
+ *   <tool name="read_file">
+ *   <path>/some/file.js</path>
+ *   </tool>
+ *
+ * Each child element is an arg. Values are free text — no JSON escaping needed.
+ * Numeric/boolean strings are coerced automatically.
  *
  * The agent runner strips the directives, executes the tools, injects results,
  * and sends a follow-up completion to get the final reply.
  *
- * Each tool: { description, schema, run(args) -> Promise<string> }
+ * Each tool: { description, dangerous?, run(args) -> Promise<string> }
+ *   dangerous: true | (args) => boolean — if set, requires user approval before execution.
  */
 
 import { readFile } from './read_file.js';
 import { writeFile } from './write_file.js';
+import { editFile } from './edit_file.js';
 import { runCommand } from './run_command.js';
-import { listDir } from './list_dir.js';
-import { searchFiles } from './search_files.js';
-import { git } from './git.js';
-import { webFetch, webReadChunk, webSearchPage } from './web_fetch.js';
+import { searchRegex } from './search_regex.js';
+import { codeSymbols } from './code_symbols.js';
+import { webFetch } from './web_fetch.js';
+export { retrieveRelevantTools } from './tool_retrieval.js';
 
 /** Tool registry — name → tool definition. */
 export const TOOLS = {
   read_file: readFile,
   write_file: writeFile,
+  edit_file: editFile,
   run_command: runCommand,
-  list_dir: listDir,
-  search_files: searchFiles,
-  git,
+  search_regex: searchRegex,
+  code_symbols: codeSymbols,
   web_fetch: webFetch,
-  web_read_chunk: webReadChunk,
-  web_search_page: webSearchPage,
 };
-
-/** Keywords that suggest a tools-capable query. */
-const TOOL_KEYWORDS = [
-  'file', 'files', 'read', 'write', 'open', 'create', 'edit', 'directory', 'folder',
-  'run', 'execute', 'command', 'shell', 'script', 'install',
-  'git', 'commit', 'branch', 'diff', 'status', 'log',
-  'search', 'find', 'grep', 'look for',
-  'code', 'function', 'class', 'import', 'export', 'module',
-  'list', 'show me', 'check',
-  'url', 'http', 'https', 'website', 'web', 'page', 'fetch', 'browse', 'look up', 'look this up',
-];
-
-/**
- * Returns true if the query likely needs tool use.
- * @param {string} query
- * @returns {boolean}
- */
-export function queryNeedsTools(query) {
-  const q = query.toLowerCase();
-  return TOOL_KEYWORDS.some(kw => q.includes(kw));
-}
 
 /**
  * Build the tool usage instructions injected into the system prompt.
+ * @param {string[]} [toolNames]  If provided, only include these tools. Defaults to all.
  * @returns {string}
  */
-export function buildToolsPrompt() {
-  const toolList = Object.keys(TOOLS).join(', ');
-  const argsList = Object.entries(TOOLS)
+export function buildToolsPrompt(toolNames) {
+  const entries = toolNames
+    ? Object.entries(TOOLS).filter(([name]) => toolNames.includes(name))
+    : Object.entries(TOOLS);
+
+  const argsList = entries
     .map(([name, t]) => `${name}: ${t.description}`)
     .join('\n');
 
   return `\n\n[Tools]: You MUST use tools to answer — do not describe what you would do, just call the tool immediately.
-Emit: <tool>{"name":"NAME","args":{...}}</tool>
-Available: ${toolList}
+Format (XML — no JSON, no escaping needed, values are plain text):
+<tool name="NAME">
+<arg1>value</arg1>
+<arg2>multi-line content goes here
+no escaping needed</arg2>
+</tool>
 Args:
 ${argsList}
 Rules: call tools immediately without preamble; multiple calls allowed; for any URL/website always call web_fetch first.`;
 }
 
+/** Coerce an XML text value to the appropriate JS primitive. */
+function coerceArg(val) {
+  if (val === 'true') return true;
+  if (val === 'false') return false;
+  const n = Number(val);
+  if (!isNaN(n) && val.trim() !== '') return n;
+  return val;
+}
+
 /**
- * Extract tool calls from an LLM response.
+ * Extract tool calls from an LLM response (XML format).
  * @param {string} text
  * @returns {Array<{name: string, args: object, raw: string}>}
  */
 export function extractToolCalls(text) {
-  const pattern = /<tool>([\s\S]*?)<\/tool>/g;
+  const toolPattern = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
   const calls = [];
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    try {
-      const parsed = JSON.parse(match[1].trim());
-      if (parsed.name && TOOLS[parsed.name]) {
-        calls.push({ name: parsed.name, args: parsed.args || {}, raw: match[0] });
-      }
-    } catch {
-      // malformed JSON — skip
+  let toolMatch;
+  while ((toolMatch = toolPattern.exec(text)) !== null) {
+    const name = toolMatch[1].trim();
+    if (!TOOLS[name]) continue;
+
+    const body = toolMatch[2];
+    const args = {};
+    const argPattern = /<(\w+)>([\s\S]*?)<\/\1>/g;
+    let argMatch;
+    while ((argMatch = argPattern.exec(body)) !== null) {
+      args[argMatch[1]] = coerceArg(argMatch[2].trim());
     }
+    calls.push({ name, args, raw: toolMatch[0] });
   }
   return calls;
 }
@@ -99,7 +103,7 @@ export function extractToolCalls(text) {
  * @returns {string}
  */
 export function stripToolCalls(text) {
-  return text.replace(/<tool>[\s\S]*?<\/tool>/g, '').trim();
+  return text.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/tool>/g, '').trim();
 }
 
 /**
