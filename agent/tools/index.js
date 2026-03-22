@@ -54,7 +54,7 @@ export const TOOLS_SCHEMA = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write content to a file (creates or overwrites).',
+      description: 'Create a new file on disk with the given content. Only use when the user asks to create a file that does not exist yet. To modify an existing file, use edit_file instead.',
       parameters: {
         type: 'object',
         properties: {
@@ -69,7 +69,7 @@ export const TOOLS_SCHEMA = [
     type: 'function',
     function: {
       name: 'edit_file',
-      description: 'Edit a file by replacing an exact string. Use for targeted changes to existing files.',
+      description: 'Modify an existing file by replacing an exact string. Prefer this over write_file whenever the file already exists.',
       parameters: {
         type: 'object',
         properties: {

@@ -236,11 +236,6 @@ export class Agent {
           toolActivity.push({ tool: name, args, result });
         }
 
-        // Nudge Oracle to not write files unless explicitly requested.
-        if (name === 'write_file' || name === 'edit_file') {
-          result += '\n[Reminder: only call write_file or edit_file when the user explicitly asked for a file change.]';
-        }
-
         workingMessages.push({ role: 'tool', tool_call_id: tc.id, content: result });
       }
     }
