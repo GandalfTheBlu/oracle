@@ -27,11 +27,13 @@
 - [x] config.json: reflection.enabled + reflection.onToolsOnly (default: only on tool-using turns)
 - [x] Verified firing via server logs: [reflection] Reply validated OK. / [reflection] Correction applied: ...
 
-### Milestone 3.3 — Cross-Context Awareness
-Oracle knows your current situation without being told.
-- [ ] On startup/each turn, scan recent git log, last modified files in watched dirs, optional "current focus" file
-- [ ] Build a situational summary injected into context: what project, what branch, recent changes
-- [ ] User can configure watched paths in config.json
+### Milestone 3.3 — Cross-Context Awareness ✅
+- [x] agent/context_awareness.js: buildSituationalContext() scans env, 30s cache, injected into systemPrompt
+- [x] Git layer: branch + last 3 commits with relative ages (execSync with 3s timeout)
+- [x] Recent files layer: depth-3 walk, configurable hours window, skips node_modules/.git/dist/data/logs
+- [x] Focus file: user writes .oracle-focus with current task — injected as "Current focus: ..."
+- [x] config.json: contextAwareness.{enabled, watchedDirs, recentFileHours, maxRecentFiles, focusFile}
+- [x] Example output: "Git (oracle): branch=master | Milestone 3.3 (2m ago) → ..."
 
 ### Milestone 3.4 — Proactive Behavior
 Oracle surfaces relevant observations without being asked.
