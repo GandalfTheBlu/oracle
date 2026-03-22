@@ -45,6 +45,20 @@
 - [x] ui/index.html: EventSource with auto-reconnect; proactive messages in distinct green bubbles
 - [x] Verified: detects new commit within 5s in live test
 
+### Milestone 3.4b — Codebase Analyzer ✅
+Background codebase analysis engine that produces a living architecture document.
+- [x] agent/codebase_analyzer.js: two-pass strategy
+  - Pass 1: per-file micro-analysis (PURPOSE/EXPORTS/IMPORTS/ISSUES, 200 tokens/file)
+  - Pass 2: synthesis pass (architecture overview + data flow + cross-file deps)
+- [x] Incremental: tracks mtime per file in `_fileState` Map — only re-analyzes changed files
+- [x] Output: `data/CODEBASE.md` with Architecture, File Summaries, Potential Issues sections
+- [x] config.json: `codeAnalysis.{enabled, dirs, extensions, maxFilesPerRun, outputPath}`
+- [x] api/server.js: `POST /analyze` manual trigger endpoint
+- [x] Startup deferred analysis: runs 5s after server boot, pushes issues as proactive messages
+- [x] proactive.js: triggers `runAnalysis` whenever file activity threshold is crossed
+- [x] context_awareness.js: injects pointer to CODEBASE.md into system prompt when file exists
+- [x] Verified: 25 files analyzed in 75s, 2 issues surfaced, CODEBASE.md written correctly
+
 ### Milestone 3.5 — Text-to-Speech (local agent voice)
 Give Oracle a voice while keeping everything local, GPU stays free for LLM.
 - [ ] Evaluate local TTS options: Kokoro, Piper, Coqui — pick best quality/speed tradeoff on CPU

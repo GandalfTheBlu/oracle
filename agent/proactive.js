@@ -19,6 +19,7 @@ import { readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
 import config from '../config.json' with { type: 'json' };
 import { invalidateSituationalContext } from './context_awareness.js';
+import { runAnalysis } from './codebase_analyzer.js';
 
 const cfg = config.proactive ?? { enabled: false };
 const awareCfg = config.contextAwareness ?? {};
@@ -149,6 +150,7 @@ async function runCheck(llmCall, onMessage) {
   }
 
   // ── File activity check ─────────────────────────────────────────────────────
+  let fileActivityDetected = false;
   if (cfg.watchFiles !== false) {
     let totalChanged = 0;
     for (const dir of watchedDirs) {
@@ -156,10 +158,19 @@ async function runCheck(llmCall, onMessage) {
     }
     if (totalChanged >= minFiles) {
       changes.push(`${totalChanged} files modified across watched directories`);
+      fileActivityDetected = true;
     }
   }
 
   _lastCheckTime = now;
+
+  // ── Codebase analysis (triggered by file activity) ──────────────────────────
+  if (fileActivityDetected || changes.length > 0) {
+    runAnalysis(llmCall, (issue) => {
+      console.log(`[proactive] Code issue surfaced: ${issue.slice(0, 80)}`);
+      onMessage(`[Code issue detected] ${issue}`);
+    }).catch(err => console.warn('[proactive] Analysis failed:', err.message));
+  }
 
   if (changes.length === 0) return;
 

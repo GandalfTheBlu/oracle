@@ -11,6 +11,7 @@ import { Agent } from '../agent/index.js';
 import { resolveApproval } from '../agent/approval.js';
 import { chatCompletion } from '../agent/llm.js';
 import { startScheduler } from '../agent/proactive.js';
+import { runAnalysis } from '../agent/codebase_analyzer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -216,6 +217,24 @@ app.post('/reset/full', async (_req, res) => {
   }
 });
 
+// ── Codebase analysis ─────────────────────────────────────────────────────────
+
+/**
+ * POST /analyze
+ * Triggers a codebase analysis pass immediately.
+ * Returns { analyzed, issues, outputPath } or { error }.
+ */
+app.post('/analyze', async (_req, res) => {
+  try {
+    const result = await runAnalysis(chatCompletion);
+    if (!result) return res.json({ status: 'skipped', reason: 'disabled or nothing to analyze' });
+    res.json({ status: 'ok', ...result });
+  } catch (err) {
+    console.error('[POST /analyze]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Force evolution (testing / manual trigger) ────────────────────────────────
 
 /**
@@ -269,4 +288,11 @@ function pushProactive(message) {
 app.listen(PORT, () => {
   console.log(`Oracle API running on http://localhost:${PORT}`);
   startScheduler(chatCompletion, pushProactive);
+
+  // Run initial codebase analysis after a short delay to avoid blocking startup.
+  setTimeout(() => {
+    runAnalysis(chatCompletion, (issue) => pushProactive(`[Code issue] ${issue}`))
+      .then(r => r && console.log(`[analyzer] Startup pass: ${r.analyzed} analyzed, ${r.issues.length} issues`))
+      .catch(err => console.warn('[analyzer] Startup pass failed:', err.message));
+  }, 5000);
 });

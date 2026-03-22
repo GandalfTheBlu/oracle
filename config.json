@@ -43,6 +43,13 @@
     "model": "C:\\llama_cpp\\models\\Qwen_Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
     "mmproj": "C:\\llama_cpp\\models\\mmproj-Qwen_Qwen2.5-VL-7B-Instruct-bf16.gguf"
   },
+  "codeAnalysis": {
+    "enabled": true,
+    "dirs": ["C:/oracle/agent", "C:/oracle/api", "C:/oracle/ui"],
+    "extensions": [".js", ".html", ".css"],
+    "maxFilesPerRun": 25,
+    "outputPath": "C:/oracle/data/CODEBASE.md"
+  },
   "imageGen": {
     "serverHost": "192.168.0.208",
     "port": 8188,

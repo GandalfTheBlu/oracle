@@ -15,7 +15,7 @@
 
 import { execSync } from 'child_process';
 import { readdirSync, statSync, existsSync, readFileSync } from 'fs';
-import { join, relative } from 'path';
+import { join } from 'path';
 import config from '../config.json' with { type: 'json' };
 
 const cfg = config.contextAwareness ?? { enabled: false };
@@ -141,6 +141,12 @@ export function buildSituationalContext() {
       const focus = readFileSync(cfg.focusFile, 'utf8').trim().slice(0, 300);
       if (focus) parts.push(`Current focus: ${focus}`);
     } catch { /* skip */ }
+  }
+
+  // ── Codebase analysis pointer ────────────────────────────────────────────────
+  const analysisPath = config.codeAnalysis?.outputPath;
+  if (analysisPath && existsSync(analysisPath)) {
+    parts.push(`Codebase analysis available at: ${analysisPath.replace(/\\/g, '/')}`);
   }
 
   if (parts.length === 0) {
