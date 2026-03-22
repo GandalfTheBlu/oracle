@@ -218,20 +218,33 @@ app.post('/reset/full', async (_req, res) => {
 
 // ── Codebase analysis ─────────────────────────────────────────────────────────
 
+/** Last analysis result — persists for status queries. */
+let _lastAnalysis = null;
+
 /**
  * POST /analyze
  * Triggers a codebase analysis pass immediately.
- * Returns { analyzed, issues, outputPath } or { error }.
+ * Returns { analyzed, total, issueCount, outputPath } or { error }.
  */
 app.post('/analyze', async (_req, res) => {
   try {
     const result = await runAnalysis(chatCompletion);
     if (!result) return res.json({ status: 'skipped', reason: 'disabled or nothing to analyze' });
-    res.json({ status: 'ok', ...result });
+    _lastAnalysis = { timestamp: Date.now(), analyzed: result.analyzed, total: result.issues.length === 0 ? result.analyzed : result.analyzed, issueCount: result.issues.length, outputPath: result.outputPath };
+    res.json({ status: 'ok', analyzed: result.analyzed, issueCount: result.issues.length, outputPath: result.outputPath });
   } catch (err) {
     console.error('[POST /analyze]', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * GET /analyze/status
+ * Returns the last analysis result metadata (no re-run).
+ */
+app.get('/analyze/status', (_req, res) => {
+  if (!_lastAnalysis) return res.json({ status: 'none' });
+  res.json({ status: 'ok', ..._lastAnalysis });
 });
 
 // ── Force evolution (testing / manual trigger) ────────────────────────────────
@@ -259,7 +272,11 @@ app.listen(PORT, () => {
   // Run initial codebase analysis after a short delay to avoid blocking startup.
   setTimeout(() => {
     runAnalysis(chatCompletion)
-      .then(r => r && console.log(`[analyzer] Startup pass: ${r.analyzed} analyzed, ${r.issues.length} issues`))
+      .then(r => {
+        if (!r) return;
+        _lastAnalysis = { timestamp: Date.now(), analyzed: r.analyzed, issueCount: r.issues.length, outputPath: r.outputPath };
+        console.log(`[analyzer] Startup pass: ${r.analyzed} analyzed, ${r.issues.length} issues`);
+      })
       .catch(err => console.warn('[analyzer] Startup pass failed:', err.message));
   }, 5000);
 });

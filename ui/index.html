@@ -402,6 +402,25 @@
 
     .approval-status { font-size: 0.8rem; margin-top: 0.2rem; }
 
+    /* Toast notification */
+    #toast {
+      position: fixed;
+      bottom: 1.2rem;
+      right: 1.2rem;
+      background: #1a2020;
+      border: 1px solid #2a4040;
+      color: #90b8b0;
+      padding: 0.45rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 200;
+      max-width: 320px;
+    }
+    #toast.visible { opacity: 1; }
+
     /* Memory category badges */
     .mem-type.category-pref       { background: #2a1a3a; color: #b07ef7; }
     .mem-type.category-fact       { background: #0d2a2a; color: #5dd0c8; }
@@ -413,6 +432,7 @@
   <header>
     <span>Oracle</span>
     <div style="display:flex;gap:0.5rem">
+      <button id="analyze-btn">analyze</button>
       <button id="memory-btn">memory</button>
       <button id="reset-btn">reset</button>
     </div>
@@ -437,6 +457,7 @@
     <div id="memory-list"></div>
     <div id="memory-empty">No memories stored.</div>
   </div>
+  <div id="toast"></div>
   <div id="input-row">
     <textarea id="input" placeholder="Say something…" rows="1"></textarea>
     <button id="send">Send</button>
@@ -666,6 +687,50 @@
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
     });
+
+    // ── Toast notifications ────────────────────────────────────────────────────
+
+    const toastEl = document.getElementById('toast');
+    let _toastTimer = null;
+
+    function showToast(msg, durationMs = 5000) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('visible');
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => toastEl.classList.remove('visible'), durationMs);
+    }
+
+    // ── Codebase analysis ──────────────────────────────────────────────────────
+
+    document.getElementById('analyze-btn').addEventListener('click', async () => {
+      showToast('Analyzing codebase…', 120_000);
+      try {
+        const res = await fetch(`${API}/analyze`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          const issueNote = data.issueCount > 0 ? `, ${data.issueCount} issue${data.issueCount > 1 ? 's' : ''} flagged` : '';
+          showToast(`Analysis complete — ${data.analyzed} files updated${issueNote}`);
+        } else if (data.status === 'skipped') {
+          showToast('Analysis: all files up to date');
+        } else {
+          showToast(`Analysis error: ${data.error || 'unknown'}`);
+        }
+      } catch (e) {
+        showToast(`Analysis failed: ${e.message}`);
+      }
+    });
+
+    // On load: show toast if a recent analysis exists (startup pass)
+    (async () => {
+      try {
+        const res = await fetch(`${API}/analyze/status`);
+        const data = await res.json();
+        if (data.status === 'ok' && Date.now() - data.timestamp < 120_000) {
+          const issueNote = data.issueCount > 0 ? `, ${data.issueCount} issue${data.issueCount > 1 ? 's' : ''} flagged` : ', no issues';
+          showToast(`Codebase analysis ready${issueNote}`);
+        }
+      } catch {}
+    })();
 
     document.getElementById('reset-btn').addEventListener('click', async () => {
       if (!confirm('Reset conversation? This clears the current chat history.')) return;

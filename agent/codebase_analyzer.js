@@ -8,26 +8,28 @@
  * Two-pass strategy:
  *   Pass 1 — per-file micro-analysis (one LLM call per file, ~200 tokens)
  *             → purpose, key exports, imports, flagged issues
+ *             Large files are split into overlapping chunks; chunk analyses
+ *             are merged with a final LLM call.
  *   Pass 2 — synthesis (one LLM call for all micro-summaries combined)
  *             → architecture overview, data flow, cross-file relationships
- *
- * Issues found in Pass 1 are collected and optionally surfaced via the
- * proactive notification system.
  *
  * State is kept in memory between runs for incremental diffing.
  * Configured via config.json → codeAnalysis.*
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
-import { join, relative, extname } from 'path';
+import { join, extname } from 'path';
 import config from '../config.json' with { type: 'json' };
 
 const cfg = config.codeAnalysis ?? { enabled: false };
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.cache', 'data', 'test-tmp', 'eval-tmp']);
 
-/** Max chars of file content sent to per-file LLM call (~1500 tokens). */
-const FILE_CONTENT_CAP = 6000;
+/** Chars per chunk sent to per-chunk LLM call. Files larger than this are split. */
+const CHUNK_SIZE = 5500;
+
+/** Overlap between consecutive chunks to preserve context across boundaries. */
+const CHUNK_OVERLAP = 500;
 
 /** Max chars per micro-summary stored and sent to synthesis (~150 tokens). */
 const SUMMARY_CAP = 600;
@@ -78,60 +80,133 @@ function collectFiles(dirs, extensions, maxFiles) {
 
 // ── Per-file analysis ─────────────────────────────────────────────────────────
 
+const ANALYZE_SYSTEM =
+  'Analyze this source file. Respond with four lines, exactly:\n' +
+  'PURPOSE: one sentence describing what this file does\n' +
+  'EXPORTS: comma-separated list of key functions/classes/constants exported (max 8)\n' +
+  'IMPORTS: comma-separated list of key modules/files imported (max 6)\n' +
+  'ISSUES: "none" OR a short description of any bugs, anti-patterns, or risks found\n\n' +
+  'Keep each line under 120 chars. No extra text.';
+
+function parseAnalysis(text) {
+  const get = (label) => {
+    const match = text.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'));
+    return match ? match[1].trim() : '';
+  };
+  return {
+    purpose: get('PURPOSE'),
+    exports: get('EXPORTS'),
+    imports: get('IMPORTS'),
+    issues:  get('ISSUES'),
+  };
+}
+
+/** Split content into overlapping chunks. Returns [content] if small enough. */
+function makeChunks(content) {
+  if (content.length <= CHUNK_SIZE) return [content];
+  const chunks = [];
+  let pos = 0;
+  while (pos < content.length) {
+    chunks.push(content.slice(pos, pos + CHUNK_SIZE));
+    if (pos + CHUNK_SIZE >= content.length) break;
+    pos += CHUNK_SIZE - CHUNK_OVERLAP;
+  }
+  return chunks;
+}
+
 async function analyzeFile(filePath, llmCall) {
   let content;
   try {
-    content = readFileSync(filePath, 'utf8').slice(0, FILE_CONTENT_CAP);
+    content = readFileSync(filePath, 'utf8');
   } catch {
     return null;
   }
 
   const fileName = filePath.replace(/\\/g, '/').split('/').pop();
+  const chunks = makeChunks(content);
 
-  const raw = await llmCall(
+  // ── Single-chunk path (most files) ──────────────────────────────────────────
+  if (chunks.length === 1) {
+    const raw = await llmCall(
+      [
+        { role: 'system', content: ANALYZE_SYSTEM },
+        { role: 'user', content: `File: ${fileName}\n\n${chunks[0]}` },
+      ],
+      { maxTokens: 200, temperature: 0.1 },
+    );
+    const text = (typeof raw === 'string' ? raw : raw.content ?? '').trim();
+    const { purpose, exports: exports_, imports: imports_, issues } = parseAnalysis(text);
+    if (!purpose) return null;
+
+    const summary =
+      `**${fileName}**: ${purpose}` +
+      (exports_ ? `\n  Exports: ${exports_}` : '') +
+      (imports_ ? `\n  Uses: ${imports_}` : '');
+
+    return {
+      summary: summary.slice(0, SUMMARY_CAP),
+      issues: (issues && issues.toLowerCase() !== 'none') ? [issues] : [],
+    };
+  }
+
+  // ── Multi-chunk path (large files) ──────────────────────────────────────────
+  console.log(`[analyzer] ${fileName} is large (${content.length} chars) — analyzing in ${chunks.length} chunks`);
+
+  const chunkTexts = [];
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      const raw = await llmCall(
+        [
+          { role: 'system', content: ANALYZE_SYSTEM },
+          {
+            role: 'user',
+            content: `File: ${fileName} (chunk ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
+          },
+        ],
+        { maxTokens: 200, temperature: 0.1 },
+      );
+      chunkTexts.push((typeof raw === 'string' ? raw : raw.content ?? '').trim());
+    } catch (err) {
+      console.warn(`[analyzer] Chunk ${i + 1}/${chunks.length} failed for ${fileName}: ${err.message}`);
+    }
+  }
+
+  if (chunkTexts.length === 0) return null;
+
+  // Merge chunk analyses into a single final analysis
+  const mergeRaw = await llmCall(
     [
       {
         role: 'system',
         content:
-          'Analyze this source file. Respond with four lines, exactly:\n' +
+          'Merge these per-chunk analyses of one file into a single final analysis.\n' +
+          'Respond with four lines, exactly:\n' +
           'PURPOSE: one sentence describing what this file does\n' +
-          'EXPORTS: comma-separated list of key functions/classes/constants exported (max 8)\n' +
-          'IMPORTS: comma-separated list of key modules/files imported (max 6)\n' +
-          'ISSUES: "none" OR a short description of any bugs, anti-patterns, or risks found\n\n' +
+          'EXPORTS: comma-separated union of all exported functions/classes/constants (max 8)\n' +
+          'IMPORTS: comma-separated union of all imported modules/files (max 6)\n' +
+          'ISSUES: "none" OR comma-separated list of any bugs, anti-patterns, or risks found\n\n' +
           'Keep each line under 120 chars. No extra text.',
       },
-      { role: 'user', content: `File: ${fileName}\n\n${content}` },
+      {
+        role: 'user',
+        content: `File: ${fileName}\n\nChunk analyses:\n\n${chunkTexts.join('\n\n---\n\n')}`,
+      },
     ],
     { maxTokens: 200, temperature: 0.1 },
   );
 
-  const text = (typeof raw === 'string' ? raw : raw.content ?? '').trim();
-
-  // Parse the four-line format robustly
-  const get = (label) => {
-    const match = text.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'));
-    return match ? match[1].trim() : '';
-  };
-
-  const purpose = get('PURPOSE');
-  const exports_ = get('EXPORTS');
-  const imports_ = get('IMPORTS');
-  const issues   = get('ISSUES');
-
-  if (!purpose) return null; // LLM returned garbage
+  const mergedText = (typeof mergeRaw === 'string' ? mergeRaw : mergeRaw.content ?? '').trim();
+  const { purpose, exports: exports_, imports: imports_, issues } = parseAnalysis(mergedText);
+  if (!purpose) return null;
 
   const summary =
     `**${fileName}**: ${purpose}` +
     (exports_ ? `\n  Exports: ${exports_}` : '') +
     (imports_ ? `\n  Uses: ${imports_}` : '');
 
-  const issueList = (issues && issues.toLowerCase() !== 'none')
-    ? [issues]
-    : [];
-
   return {
     summary: summary.slice(0, SUMMARY_CAP),
-    issues: issueList,
+    issues: (issues && issues.toLowerCase() !== 'none') ? [issues] : [],
   };
 }
 
