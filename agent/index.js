@@ -45,6 +45,18 @@ When asked to do something, do it — use your tools to act rather than explaini
 /** Max tool execution rounds per turn (prevents infinite loops). */
 const MAX_TOOL_ROUNDS = 5;
 
+/**
+ * Cap a tool result to a safe size before injecting into workingMessages.
+ * Keeps the context budget from overflowing mid-loop on large file reads.
+ * The full result is still stored in toolActivity for the UI.
+ */
+const TOOL_RESULT_CAP = 4000; // chars (~1000 tokens)
+function capResult(text) {
+  if (text.length <= TOOL_RESULT_CAP) return text;
+  return text.slice(0, TOOL_RESULT_CAP) +
+    `\n...[${text.length - TOOL_RESULT_CAP} chars truncated — use offset/limit to read further]`;
+}
+
 /** Patterns that signal the user wants to correct or retry the previous tool call. */
 const CORRECTION_PATTERNS = [
   /\b(wrong|incorrect|that'?s not right|not right)\b/i,
@@ -190,12 +202,14 @@ export class Agent {
    * @private
    */
   async _runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired = null) {
-    const toolsMessage = { role: 'user', content: buildToolsPrompt() };
+    // Tools are injected as a user message at the end of context every round.
+    // After the first round, the tools prompt is folded into the tool-results message
+    // so there is never two consecutive user messages.
+    const toolsPrompt = buildToolsPrompt();
+    let nextCall = () => chatCompletion([...workingMessages, { role: 'user', content: toolsPrompt }], { maxTokens: 1024 });
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      // Inject tools fresh at the end of context for each round — maximally salient,
-      // never persisted to workingMessages or conversation history.
-      const raw = await chatCompletion([...workingMessages, toolsMessage], { maxTokens: 1024 });
+      const raw = await nextCall();
       const calls = extractToolCalls(raw);
 
       if (calls.length === 0) {
@@ -230,7 +244,8 @@ export class Agent {
 
         try {
           const output = await tool.run(call.args);
-          resultParts.push(`[tool: ${call.name}]\n${output}`);
+          const capped = capResult(output);
+          resultParts.push(`[tool: ${call.name}]\n${capped}`);
           toolActivity.push({ tool: call.name, args: call.args, result: output });
         } catch (err) {
           toolErrors.push(`${call.name}: ${err.message}`);
@@ -241,10 +256,13 @@ export class Agent {
       }
 
       workingMessages.push({ role: 'assistant', content: raw });
+      // Fold tools prompt into the continuation — single user message, not two consecutive.
       workingMessages.push({
         role: 'user',
-        content: `[Tool results]:\n${resultParts.join('\n\n')}\n\nNow give your final response to the user based on these results.`,
+        content: `[Tool results]:\n${resultParts.join('\n\n')}\n\nCall the next tool now if there is more work to do. Give a final response only when the task is fully complete.\n\n${toolsPrompt}`,
       });
+      // Next round reads from workingMessages directly — tools already included above.
+      nextCall = () => chatCompletion(workingMessages, { maxTokens: 1024 });
     }
     return null; // exhausted rounds without a prose reply
   }

@@ -60,7 +60,7 @@ Format (XML — element names are the exact parameter names from the Args list b
 </tool>
 Args:
 ${argsList}
-Rules: call tools immediately without preamble when needed; multiple calls allowed; for any URL/website always call web_fetch first.`;
+Rules: call tools immediately without preamble when needed; multiple calls allowed; for any URL/website always call web_fetch first. Never substitute a tool action with a description or code block — if the task requires writing a file, running a command, or fetching a URL, call the tool; do not show what you would do instead.`;
 }
 
 /** Coerce an XML text value to the appropriate JS primitive. */
