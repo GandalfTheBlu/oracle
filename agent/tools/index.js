@@ -1,20 +1,12 @@
 /**
  * Oracle Tool Registry
  *
- * Tools are invoked when the LLM emits a directive in its response:
+ * Tools are invoked via the OpenAI native function-calling API.
+ * The LLM emits structured tool_calls; we execute them and inject
+ * results as { role: 'tool' } messages.
  *
- *   <tool name="read_file">
- *   <path>/some/file.js</path>
- *   </tool>
- *
- * Each child element is an arg. Values are free text — no JSON escaping needed.
- * Numeric/boolean strings are coerced automatically.
- *
- * The agent runner strips the directives, executes the tools, injects results,
- * and sends a follow-up completion to get the final reply.
- *
- * Each tool: { description, dangerous?, run(args) -> Promise<string> }
- *   dangerous: true | (args) => boolean — if set, requires user approval before execution.
+ * Each tool: { description, dangerous?, parameters, run(args) -> Promise<string> }
+ *   dangerous: true | (args) => boolean — requires user approval before execution.
  */
 
 import { readFile } from './read_file.js';
@@ -37,119 +29,117 @@ export const TOOLS = {
 };
 
 /**
- * Build the tool usage instructions injected into the system prompt.
- * @param {string[]} [toolNames]  If provided, only include these tools. Defaults to all.
- * @returns {string}
+ * OpenAI function-calling schema for all tools.
+ * Passed as the `tools` field in each API request — llama.cpp renders
+ * them via the model's jinja template, no manual prompt injection needed.
  */
-export function buildToolsPrompt(toolNames) {
-  const entries = toolNames
-    ? Object.entries(TOOLS).filter(([name]) => toolNames.includes(name))
-    : Object.entries(TOOLS);
-
-  const argsList = entries
-    .map(([name, t]) => `${name}: ${t.description}`)
-    .join('\n');
-
-  return `\n\n[Tools available — use them when the task genuinely requires it]:
-Call a tool only if the task requires reading/writing files, running commands, searching code, or fetching URLs.
-For pure conversation or conceptual/factual questions with no file/code/URL involved, respond directly without calling any tools.
-Format (XML — element names are the exact parameter names from the Args list below):
-<tool name="read_file">
-<path>/some/file.txt</path>
-<offset>0</offset>
-</tool>
-Args:
-${argsList}
-Rules: call tools immediately without preamble when needed; multiple calls allowed; for any URL/website always call web_fetch first. Never substitute a tool action with a description or code block — if the task requires writing a file, running a command, or fetching a URL, call the tool; do not show what you would do instead.`;
-}
-
-/** Coerce an XML text value to the appropriate JS primitive. */
-function coerceArg(val) {
-  if (val === 'true') return true;
-  if (val === 'false') return false;
-  const n = Number(val);
-  if (!isNaN(n) && val.trim() !== '') return n;
-  return val;
-}
-
-/**
- * Extract tool calls from an LLM response (XML format).
- * @param {string} text
- * @returns {Array<{name: string, args: object, raw: string}>}
- */
-export function extractToolCalls(text) {
-  const calls = [];
-
-  // Primary format: <tool name="NAME"><arg>value</arg></tool>
-  const toolPattern = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
-  let toolMatch;
-  while ((toolMatch = toolPattern.exec(text)) !== null) {
-    const name = toolMatch[1].trim();
-    if (!TOOLS[name]) continue;
-    const body = toolMatch[2];
-    const args = {};
-    const argPattern = /<(\w+)>([\s\S]*?)<\/\1>/g;
-    let argMatch;
-    while ((argMatch = argPattern.exec(body)) !== null) {
-      args[argMatch[1]] = coerceArg(argMatch[2].trim());
-    }
-    calls.push({ name, args, raw: toolMatch[0] });
-  }
-
-  // Secondary format: <tool_name attr="value" /> (native Qwen style)
-  // Only used when no primary-format calls were found in this chunk of text.
-  if (calls.length === 0) {
-    const toolNames = Object.keys(TOOLS).join('|');
-    const altPattern = new RegExp(`<(${toolNames})\\s+([^>]*?)\\s*/>`, 'g');
-    const attrPattern = /(\w+)="((?:[^"\\]|\\.)*)"/g;
-    let altMatch;
-    while ((altMatch = altPattern.exec(text)) !== null) {
-      const name = altMatch[1];
-      const args = {};
-      let attrMatch;
-      attrPattern.lastIndex = 0;
-      while ((attrMatch = attrPattern.exec(altMatch[2])) !== null) {
-        args[attrMatch[1]] = coerceArg(attrMatch[2]);
-      }
-      calls.push({ name, args, raw: altMatch[0] });
-    }
-  }
-
-  return calls;
-}
-
-/**
- * Strip tool call tags from text (for the user-facing reply).
- * @param {string} text
- * @returns {string}
- */
-export function stripToolCalls(text) {
-  const toolNames = Object.keys(TOOLS).join('|');
-  // Strip primary format
-  let out = text.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/tool>/g, '');
-  // Strip secondary format
-  out = out.replace(new RegExp(`<(?:${toolNames})\\s+[^>]*?\\s*/>`, 'g'), '');
-  return out.trim();
-}
-
-/**
- * Execute a list of tool calls and return formatted results + error list.
- * @param {Array<{name: string, args: object}>} calls
- * @returns {Promise<{output: string, errors: string[]}>}
- */
-export async function executeToolCalls(calls) {
-  const errors = [];
-  const results = await Promise.all(
-    calls.map(async ({ name, args }) => {
-      const tool = TOOLS[name];
-      try {
-        const output = await tool.run(args);
-        return `[tool: ${name}]\n${output}`;
-      } catch (err) {
-        errors.push(`${name}: ${err.message}`);
-        return `[tool: ${name}] ERROR: ${err.message}`;
-      }
-    })
-  );
-  return { output: results.join('\n\n'), errors };
-}
+export const TOOLS_SCHEMA = [
+  {
+    type: 'function',
+    function: {
+      name: 'read_file',
+      description: 'Read a file from disk.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path:   { type: 'string',  description: 'Absolute file path' },
+          offset: { type: 'integer', description: 'Start line (0-based)' },
+          limit:  { type: 'integer', description: 'Number of lines to read' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_file',
+      description: 'Write content to a file (creates or overwrites).',
+      parameters: {
+        type: 'object',
+        properties: {
+          path:    { type: 'string', description: 'Absolute file path' },
+          content: { type: 'string', description: 'Full file content' },
+        },
+        required: ['path', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'edit_file',
+      description: 'Edit a file by replacing an exact string. Use for targeted changes to existing files.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path:       { type: 'string', description: 'Absolute file path' },
+          old_string: { type: 'string', description: 'Exact string to replace (must exist in file)' },
+          new_string: { type: 'string', description: 'Replacement string' },
+        },
+        required: ['path', 'old_string', 'new_string'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_command',
+      description: 'Run a PowerShell command and return stdout+stderr.',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'PowerShell command to run' },
+          cwd:     { type: 'string', description: 'Working directory (optional)' },
+        },
+        required: ['command'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_regex',
+      description: 'Search for a regex pattern in file names and contents under a directory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path:       { type: 'string',  description: 'Root directory to search' },
+          pattern:    { type: 'string',  description: 'Regex pattern' },
+          maxDepth:   { type: 'integer', description: 'Max directory depth (default 5, max 10)' },
+          maxResults: { type: 'integer', description: 'Max results (default 50, max 200)' },
+        },
+        required: ['path', 'pattern'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'code_symbols',
+      description: 'List functions, classes, and methods with line numbers in a JS/TS/Python source file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute path to source file' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_fetch',
+      description: 'Fetch a URL and save the content as plain text to a local file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url:  { type: 'string', description: 'URL to fetch' },
+          path: { type: 'string', description: 'Local file path to save content' },
+        },
+        required: ['url', 'path'],
+      },
+    },
+  },
+];

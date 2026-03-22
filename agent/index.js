@@ -22,12 +22,7 @@ import {
 import { reason } from './reasoning.js';
 import { logInteraction, recordFeedback, getLearningStats } from './learning.js';
 import { shouldEvolve, runEvolution, applyEvolution } from './evolution.js';
-import {
-  buildToolsPrompt,
-  extractToolCalls,
-  stripToolCalls,
-  TOOLS,
-} from './tools/index.js';
+import { TOOLS, TOOLS_SCHEMA } from './tools/index.js';
 import { requestApproval } from './approval.js';
 import {
   listMemories,
@@ -119,7 +114,6 @@ export class Agent {
         userMessage,
         systemPrompt + memoryBlock,
         prelimContextMessages,
-        buildToolsPrompt(),   // tools visible to reasoning, not persisted
       );
     } catch (err) {
       console.warn('[agent] Reasoning pass failed:', err.message);
@@ -202,69 +196,57 @@ export class Agent {
    * @private
    */
   async _runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity, onApprovalRequired = null) {
-    // Tools are injected as a user message at the end of context every round.
-    // After the first round, the tools prompt is folded into the tool-results message
-    // so there is never two consecutive user messages.
-    const toolsPrompt = buildToolsPrompt();
-    let nextCall = () => chatCompletion([...workingMessages, { role: 'user', content: toolsPrompt }], { maxTokens: 1024 });
-
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const raw = await nextCall();
-      const calls = extractToolCalls(raw);
+      // Pass tools schema on every call — llama.cpp renders it via jinja template.
+      const response = await chatCompletion(workingMessages, { maxTokens: 1024, tools: TOOLS_SCHEMA });
 
-      if (calls.length === 0) {
-        return stripToolCalls(raw);
+      if (!response.tool_calls?.length) {
+        // Model produced prose — we're done.
+        return response.content;
       }
 
-      toolsUsed.push(...calls.map(c => c.name));
-      console.log(`[agent] Tool round ${round + 1}: ${calls.map(c => c.name).join(', ')}`);
+      toolsUsed.push(...response.tool_calls.map(tc => tc.function.name));
+      console.log(`[agent] Tool round ${round + 1}: ${response.tool_calls.map(tc => tc.function.name).join(', ')}`);
 
-      const resultParts = [];
-      for (const call of calls) {
-        const tool = TOOLS[call.name];
+      // Push assistant turn with tool_calls into conversation history.
+      workingMessages.push({ role: 'assistant', content: response.content || null, tool_calls: response.tool_calls });
 
-        // Check if approval is required for this call
+      // Execute each tool call and inject results as tool messages.
+      for (const tc of response.tool_calls) {
+        const name = tc.function.name;
+        const args = JSON.parse(tc.function.arguments);
+        const tool = TOOLS[name];
+
         if (onApprovalRequired && tool) {
-          const dangerCheck = typeof tool.dangerous === 'function'
-            ? tool.dangerous(call.args)
-            : !!tool.dangerous;
-
+          const dangerCheck = typeof tool.dangerous === 'function' ? tool.dangerous(args) : !!tool.dangerous;
           if (dangerCheck) {
-            const { id, promise } = requestApproval(call.name, call.args);
-            onApprovalRequired({ id, tool: call.name, args: call.args });
+            const { id, promise } = requestApproval(name, args);
+            onApprovalRequired({ id, tool: name, args });
             const approved = await promise;
             if (!approved) {
               const msg = 'User denied execution.';
-              resultParts.push(`[tool: ${call.name}]\n${msg}`);
-              toolActivity.push({ tool: call.name, args: call.args, result: msg, denied: true });
+              workingMessages.push({ role: 'tool', tool_call_id: tc.id, content: msg });
+              toolActivity.push({ tool: name, args, result: msg, denied: true });
               continue;
             }
           }
         }
 
+        let result;
         try {
-          const output = await tool.run(call.args);
-          const capped = capResult(output);
-          resultParts.push(`[tool: ${call.name}]\n${capped}`);
-          toolActivity.push({ tool: call.name, args: call.args, result: output });
+          const output = await tool.run(args);
+          result = capResult(output);
+          toolActivity.push({ tool: name, args, result: output });
         } catch (err) {
-          toolErrors.push(`${call.name}: ${err.message}`);
-          const msg = `ERROR: ${err.message}`;
-          resultParts.push(`[tool: ${call.name}]\n${msg}`);
-          toolActivity.push({ tool: call.name, args: call.args, result: msg });
+          toolErrors.push(`${name}: ${err.message}`);
+          result = `ERROR: ${err.message}`;
+          toolActivity.push({ tool: name, args, result });
         }
-      }
 
-      workingMessages.push({ role: 'assistant', content: raw });
-      // Fold tools prompt into the continuation — single user message, not two consecutive.
-      workingMessages.push({
-        role: 'user',
-        content: `[Tool results]:\n${resultParts.join('\n\n')}\n\nCall the next tool now if there is more work to do. Give a final response only when the task is fully complete.\n\n${toolsPrompt}`,
-      });
-      // Next round reads from workingMessages directly — tools already included above.
-      nextCall = () => chatCompletion(workingMessages, { maxTokens: 1024 });
+        workingMessages.push({ role: 'tool', tool_call_id: tc.id, content: result });
+      }
     }
-    return null; // exhausted rounds without a prose reply
+    return null; // exhausted rounds
   }
 
   /**
@@ -281,8 +263,7 @@ export class Agent {
 
     if (!reply) {
       // Rounds exhausted — do a final prose call to summarise what happened.
-      // workingMessages already ends with the tool-results + tools prompt.
-      reply = stripToolCalls(await chatCompletion(workingMessages, { maxTokens: 1024 }));
+      reply = await chatCompletion(workingMessages, { maxTokens: 1024 });
     }
 
     this.lastToolActivity = toolActivity.length ? toolActivity : null;
@@ -334,9 +315,8 @@ export class Agent {
         reply = loopReply;
         onToken(reply);
       } else {
-        // Tool rounds ran; stream the final reply with tools still available.
-        const toolsMessage = { role: 'user', content: buildToolsPrompt() };
-        for await (const token of chatCompletionStream([...workingMessages, toolsMessage], { maxTokens: 1024 })) {
+        // Tool rounds ran; stream the final prose reply.
+        for await (const token of chatCompletionStream(workingMessages, { maxTokens: 1024 })) {
           reply += token;
           onToken(token);
         }

@@ -13,20 +13,23 @@ const BASE_URL = `http://${serverHost}:${port}`;
  * @param {object} [opts]
  * @param {number} [opts.maxTokens]
  * @param {number} [opts.temperature]
- * @returns {Promise<string>} The assistant's reply text
+ * @param {Array}  [opts.tools]  OpenAI function definitions. When provided,
+ *   returns {content, tool_calls, finish_reason} instead of a plain string.
+ * @returns {Promise<string|{content:string, tool_calls:Array, finish_reason:string}>}
  */
 export async function chatCompletion(messages, opts = {}) {
-  const { maxTokens = 512, temperature = 0.7 } = opts;
+  const { maxTokens = 512, temperature = 0.7, tools } = opts;
+
+  const body = { model: 'local', messages, max_tokens: maxTokens, temperature };
+  if (tools?.length) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+  }
 
   const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'local',
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -35,7 +38,18 @@ export async function chatCompletion(messages, opts = {}) {
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  const choice = data.choices[0];
+
+  // Return structured object only when tools were passed
+  if (tools?.length) {
+    return {
+      content: choice.message.content ?? '',
+      tool_calls: choice.message.tool_calls ?? [],
+      finish_reason: choice.finish_reason,
+    };
+  }
+
+  return choice.message.content;
 }
 
 /**

@@ -1,9 +1,8 @@
 /**
  * Oracle Unit Tests — pure logic, no network, no LLM.
  *
- * Tests: extractToolCalls, stripToolCalls, buildToolsPrompt,
- *        requestApproval/resolveApproval, run_command.dangerous(),
- *        read_file.run(), edit_file.run()
+ * Tests: TOOLS_SCHEMA structure, requestApproval/resolveApproval,
+ *        run_command.dangerous(), read_file.run(), edit_file.run()
  *
  * Usage: node tests/test_unit.js
  * (Can also be run by tests/run_tests.js)
@@ -11,7 +10,7 @@
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { extractToolCalls, stripToolCalls, buildToolsPrompt, TOOLS } from '../agent/tools/index.js';
+import { TOOLS, TOOLS_SCHEMA } from '../agent/tools/index.js';
 import { requestApproval, resolveApproval } from '../agent/approval.js';
 import { runCommand } from '../agent/tools/run_command.js';
 import { readFile } from '../agent/tools/read_file.js';
@@ -69,130 +68,50 @@ function teardownFixtures() {
   }
 }
 
-// ── extractToolCalls ──────────────────────────────────────────────────────────
+// ── TOOLS_SCHEMA ──────────────────────────────────────────────────────────────
 
-describe('extractToolCalls — basic');
+describe('TOOLS_SCHEMA — structure');
 
-{
-  const calls = extractToolCalls('<tool name="read_file"><path>/tmp/foo.txt</path></tool>');
-  expect(calls.length === 1, 'parses a single tool call');
-  expect(calls[0]?.name === 'read_file', 'correct tool name');
-  expect(calls[0]?.args?.path === '/tmp/foo.txt', 'correct path arg');
-}
-
-describe('extractToolCalls — numeric/boolean coercion');
+const EXPECTED_TOOLS = ['read_file', 'write_file', 'edit_file', 'run_command', 'search_regex', 'code_symbols', 'web_fetch'];
 
 {
-  const calls = extractToolCalls(`
-    <tool name="read_file">
-      <path>/tmp/file.txt</path>
-      <offset>5</offset>
-      <limit>20</limit>
-    </tool>
-  `);
-  expect(calls.length === 1, 'parses one call');
-  expect(calls[0]?.args?.offset === 5, 'offset coerced to number');
-  expect(calls[0]?.args?.limit === 20, 'limit coerced to number');
+  expect(Array.isArray(TOOLS_SCHEMA), 'TOOLS_SCHEMA is an array');
+  expect(TOOLS_SCHEMA.length === EXPECTED_TOOLS.length, `has ${EXPECTED_TOOLS.length} tool definitions`);
 }
 
 {
-  // write_file is in TOOLS so boolean dangerous flag parsing matters
-  const calls = extractToolCalls(`
-    <tool name="write_file">
-      <path>/tmp/out.txt</path>
-      <content>hello</content>
-    </tool>
-  `);
-  expect(calls.length === 1, 'parses write_file');
-  expect(calls[0]?.args?.content === 'hello', 'content arg correct');
+  for (const name of EXPECTED_TOOLS) {
+    const entry = TOOLS_SCHEMA.find(t => t.function?.name === name);
+    expect(!!entry, `${name} is in TOOLS_SCHEMA`);
+    expect(entry?.type === 'function', `${name} has type: 'function'`);
+    expect(typeof entry?.function?.description === 'string', `${name} has a description`);
+    expect(typeof entry?.function?.parameters === 'object', `${name} has parameters`);
+    expect(Array.isArray(entry?.function?.parameters?.required), `${name} has required array`);
+  }
 }
 
-describe('extractToolCalls — multiline arg value');
+describe('TOOLS_SCHEMA — required parameters');
 
 {
-  const calls = extractToolCalls(`<tool name="write_file">
-<path>/tmp/x.txt</path>
-<content>line 1
-line 2
-line 3</content>
-</tool>`);
-  expect(calls.length === 1, 'parses multiline arg');
-  expect(calls[0]?.args?.content?.includes('line 2'), 'multiline content preserved');
+  const schema = (name) => TOOLS_SCHEMA.find(t => t.function.name === name)?.function;
+
+  expect(schema('read_file').parameters.required.includes('path'), 'read_file requires path');
+  expect(schema('write_file').parameters.required.includes('path'), 'write_file requires path');
+  expect(schema('write_file').parameters.required.includes('content'), 'write_file requires content');
+  expect(schema('edit_file').parameters.required.includes('old_string'), 'edit_file requires old_string');
+  expect(schema('edit_file').parameters.required.includes('new_string'), 'edit_file requires new_string');
+  expect(schema('run_command').parameters.required.includes('command'), 'run_command requires command');
+  expect(schema('search_regex').parameters.required.includes('pattern'), 'search_regex requires pattern');
+  expect(schema('web_fetch').parameters.required.includes('url'), 'web_fetch requires url');
+  expect(schema('web_fetch').parameters.required.includes('path'), 'web_fetch requires path');
 }
 
-describe('extractToolCalls — multiple calls');
+describe('TOOLS registry — all schema entries have a run() implementation');
 
 {
-  const calls = extractToolCalls(`
-    <tool name="read_file"><path>/a.txt</path></tool>
-    some text in between
-    <tool name="read_file"><path>/b.txt</path></tool>
-  `);
-  expect(calls.length === 2, 'parses two tool calls');
-  expect(calls[0]?.args?.path === '/a.txt', 'first call path correct');
-  expect(calls[1]?.args?.path === '/b.txt', 'second call path correct');
-}
-
-describe('extractToolCalls — unknown tool ignored');
-
-{
-  const calls = extractToolCalls('<tool name="nonexistent_tool"><arg>val</arg></tool>');
-  expect(calls.length === 0, 'unknown tool is silently ignored');
-}
-
-describe('extractToolCalls — no tool calls in plain text');
-
-{
-  const calls = extractToolCalls('Just a normal response with no tool calls.');
-  expect(calls.length === 0, 'returns empty array for plain text');
-}
-
-// ── stripToolCalls ────────────────────────────────────────────────────────────
-
-describe('stripToolCalls');
-
-{
-  const stripped = stripToolCalls('Before <tool name="read_file"><path>/x</path></tool> After');
-  expect(stripped === 'Before  After'.trim(), 'removes tool tag, preserves surrounding text',
-    `got: "${stripped}"`);
-}
-
-{
-  const stripped = stripToolCalls('<tool name="read_file"><path>/a</path></tool><tool name="read_file"><path>/b</path></tool>');
-  expect(stripped === '', 'removes multiple tool tags, result is empty');
-}
-
-{
-  const plain = 'Just a normal response.';
-  expect(stripToolCalls(plain) === plain, 'no-op on text without tool tags');
-}
-
-// ── buildToolsPrompt ──────────────────────────────────────────────────────────
-
-describe('buildToolsPrompt');
-
-{
-  const prompt = buildToolsPrompt(['read_file', 'write_file']);
-  expect(prompt.includes('read_file'), 'includes read_file when in filter');
-  expect(prompt.includes('write_file'), 'includes write_file when in filter');
-  expect(!prompt.includes('run_command'), 'excludes run_command when not in filter');
-}
-
-{
-  const prompt = buildToolsPrompt(); // all tools
-  expect(prompt.includes('read_file'), 'all-tools prompt includes read_file');
-  expect(prompt.includes('run_command'), 'all-tools prompt includes run_command');
-  expect(prompt.includes('web_fetch'), 'all-tools prompt includes web_fetch');
-}
-
-{
-  const prompt = buildToolsPrompt(['code_symbols']);
-  expect(prompt.includes('code_symbols'), 'single-tool filter works');
-  // The format example may mention read_file as a concrete example, but the args
-  // list (format: "name: description") should only include the filtered tools.
-  // Check that read_file's description doesn't appear (it won't be in the args list).
-  const argsSection = prompt.slice(prompt.indexOf('Args:'));
-  expect(!argsSection.includes('read_file:'), 'single-tool filter excludes others from args list');
+  for (const name of EXPECTED_TOOLS) {
+    expect(typeof TOOLS[name]?.run === 'function', `${name} has a run() function`);
+  }
 }
 
 // ── requestApproval / resolveApproval ─────────────────────────────────────────
