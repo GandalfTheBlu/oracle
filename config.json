@@ -22,7 +22,7 @@
     "binary": "C:\\llama_cpp\\bin\\llama-server.exe",
     "model": "C:\\llama_cpp\\models\\Qwen3-8B-Q8_0.gguf",
     "contextSize": 8192,
-    "extraArgs": "--jinja"
+    "extraArgs": "--jinja --reasoning-budget 0"
   },
   "embedding": {
     "serverHost": "192.168.0.208",
