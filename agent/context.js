@@ -17,8 +17,8 @@ import { chatCompletion } from './llm.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-/** LLM context size in tokens (from config — 4096 total). */
-const CONTEXT_LIMIT = 4096;
+/** LLM context size in tokens (from config — 8192 total). */
+const CONTEXT_LIMIT = 8192;
 
 /**
  * Target budget for history + system prompt together.

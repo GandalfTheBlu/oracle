@@ -4,8 +4,8 @@
     "port": 8080,
     "binary": "C:\\llama_cpp\\bin\\llama-server.exe",
     "model": "C:\\llama_cpp\\models\\qwen2.5-coder-14b-instruct-q6_k.gguf",
-    "contextSize": 4096,
-    "extraArgs": "--jinja"
+    "contextSize": 8192,
+    "extraArgs": "--jinja --flash-attn"
   },
   "embedding": {
     "serverHost": "192.168.0.208",
