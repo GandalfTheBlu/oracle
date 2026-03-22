@@ -217,6 +217,57 @@ app.post('/reset/full', async (_req, res) => {
   }
 });
 
+// ── Goals ─────────────────────────────────────────────────────────────────────
+
+app.get('/goals', (_req, res) => {
+  res.json(agent.listGoals());
+});
+
+app.post('/goals', (req, res) => {
+  const { title, description } = req.body;
+  if (!title) return res.status(400).json({ error: 'title is required' });
+  res.status(201).json(agent.createGoal(title, description || ''));
+});
+
+app.patch('/goals/:id', (req, res) => {
+  const updated = agent.updateGoal(req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Goal not found' });
+  res.json(updated);
+});
+
+app.delete('/goals/:id', (req, res) => {
+  const ok = agent.deleteGoal(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Goal not found' });
+  res.json({ status: 'ok' });
+});
+
+/**
+ * POST /goals/:id/execute
+ * Runs the goal autonomously. Streams SSE step events:
+ *   data: {"type":"step","index":1,"summary":"...","toolResults":[...],"done":false}
+ *   data: {"type":"done","steps":3,"completed":true}
+ *   data: {"type":"error","message":"..."}
+ */
+app.post('/goals/:id/execute', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  try {
+    await agent.executeGoal(req.params.id, {
+      onStep: (step) => send({ type: 'step', ...step }),
+      onDone: (summary) => { send({ type: 'done', ...summary }); res.end(); },
+      onError: (err) => { send({ type: 'error', message: err.message }); res.end(); },
+    });
+  } catch (err) {
+    send({ type: 'error', message: err.message });
+    res.end();
+  }
+});
+
 // ── Codebase analysis ─────────────────────────────────────────────────────────
 
 /** Last analysis result — persists for status queries. */

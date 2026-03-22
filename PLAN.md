@@ -69,6 +69,26 @@ Background codebase analysis engine that produces a living architecture document
 - [x] context_awareness.js: injects pointer to CODEBASE.md into system prompt when file exists
 - [x] Verified: 25 files analyzed in 75s, 2 issues surfaced, CODEBASE.md written correctly
 
+### Milestone 3.6 — Goal Tracking & Autonomous Execution ✅
+- [x] agent/goals.js: persistent goals model (goals.json), CRUD + background extraction
+  - Goal structure: id, title, description, status (active/done/cancelled), steps log
+  - extractGoal(): background LLM call after each turn — detects if user expressed a goal, creates it silently
+- [x] agent/executor.js: autonomous multi-step execution loop
+  - Builds goal-focused thread, calls LLM with full tool access (read_file, write_file, run_command, etc.)
+  - LLM signals completion with [DONE] marker; caps at 10 steps
+  - Each step: tool calls executed, results injected, step persisted to goal record
+  - Picks up previous steps if goal is partially executed
+- [x] agent/index.js: goal extraction wired into _finish() background block; Agent exposes listGoals, createGoal, updateGoal, deleteGoal, executeGoal methods
+- [x] api/server.js: GET/POST/PATCH/DELETE /goals + POST /goals/:id/execute (SSE stream)
+  - Execute streams step events: {type:'step', index, summary, toolResults, done}
+  - Final {type:'done', steps, completed} or {type:'error'}
+- [x] ui/index.html: Goals panel (amber theme)
+  - 'goals' button in header, highlights amber when active goals exist (30s poll)
+  - Manual goal creation via input field
+  - Per-goal: status badge, description, step history, execute/cancel/delete buttons
+  - Execute button streams live step updates into panel as they arrive
+  - Auto-refreshes when execution completes
+
 ### Milestone 3.5 — Text-to-Speech (local agent voice)
 Give Oracle a voice while keeping everything local, GPU stays free for LLM.
 - [ ] Evaluate local TTS options: Kokoro, Piper, Coqui — pick best quality/speed tradeoff on CPU

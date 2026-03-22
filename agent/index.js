@@ -26,6 +26,8 @@ import { TOOLS, TOOLS_SCHEMA } from './tools/index.js';
 import { requestApproval } from './approval.js';
 import { reflect } from './reflection.js';
 import { buildSituationalContext } from './context_awareness.js';
+import { extractGoal, listGoals, getGoal, createGoal, updateGoal, deleteGoal } from './goals.js';
+import { executeGoal as runGoalExecution } from './executor.js';
 import {
   listMemories,
   getMemory,
@@ -179,6 +181,7 @@ export class Agent {
 
     Promise.all([
       extractAndStore(userMessage, reply, chatCompletion),
+      extractGoal(userMessage, reply, chatCompletion),
       this._maybeEvolve(),
     ]).catch(err => console.warn('[agent] Background update failed:', err.message));
 
@@ -449,4 +452,23 @@ export class Agent {
   getMemory(id)      { return getMemory(id); }
   deleteMemory(id)   { return deleteMemory(id); }
   clearMemories()    { return clearMemories(); }
+
+  // ── Goal management ───────────────────────────────────────────────────────────
+
+  listGoals(status)          { return listGoals(status); }
+  getGoal(id)                { return getGoal(id); }
+  createGoal(title, desc)    { return createGoal(title, desc); }
+  updateGoal(id, patch)      { return updateGoal(id, patch); }
+  deleteGoal(id)             { return deleteGoal(id); }
+
+  /**
+   * Autonomously execute a goal step by step.
+   * Calls onStep(stepInfo) for each completed step and onDone(summary) at the end.
+   */
+  executeGoal(goalId, callbacks) {
+    const goal = getGoal(goalId);
+    if (!goal) throw new Error(`Goal ${goalId} not found`);
+    if (goal.status === 'done') throw new Error(`Goal ${goalId} is already completed`);
+    return runGoalExecution(goal, callbacks);
+  }
 }

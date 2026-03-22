@@ -207,6 +207,159 @@
     #send:hover { background: #1e4a78; }
     #send:disabled { opacity: 0.5; cursor: default; }
 
+    /* Goals panel */
+    #goals-btn {
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: #555;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 5px;
+      padding: 0.25rem 0.65rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #goals-btn:hover { color: #c8a060; border-color: #c8a060; }
+    #goals-btn.has-active { color: #c8a060; border-color: #5a4020; }
+
+    #goals-panel {
+      display: none;
+      position: fixed;
+      top: 0; right: 0;
+      width: 400px;
+      height: 100vh;
+      background: #0f0f0f;
+      border-left: 1px solid #222;
+      flex-direction: column;
+      z-index: 100;
+    }
+    #goals-panel.open { display: flex; }
+
+    #goals-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #222;
+      font-size: 0.85rem;
+      color: #c8a060;
+      font-weight: 600;
+    }
+
+    #goals-panel-header .actions { display: flex; gap: 0.4rem; }
+
+    #goals-new-row {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    #goals-new-input {
+      flex: 1;
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      color: #ccc;
+      font-size: 0.78rem;
+      padding: 0.3rem 0.5rem;
+      font-family: inherit;
+    }
+
+    #goals-new-btn {
+      font-size: 0.72rem;
+      background: none;
+      border: 1px solid #3a3020;
+      border-radius: 4px;
+      color: #c8a060;
+      padding: 0.3rem 0.6rem;
+      cursor: pointer;
+    }
+    #goals-new-btn:hover { background: #1a1400; }
+
+    #goals-list { flex: 1; overflow-y: auto; padding: 0.4rem 0; }
+
+    .goal-item {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .goal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .goal-title {
+      font-size: 0.82rem;
+      color: #ddd;
+      flex: 1;
+      line-height: 1.3;
+    }
+
+    .goal-status {
+      font-size: 0.68rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .goal-status.active     { background: #1a1400; color: #c8a060; }
+    .goal-status.done       { background: #0d1a0d; color: #70a870; }
+    .goal-status.cancelled  { background: #1a1010; color: #888; }
+
+    .goal-desc {
+      font-size: 0.74rem;
+      color: #666;
+      margin-top: 0.25rem;
+      line-height: 1.4;
+    }
+
+    .goal-actions {
+      display: flex;
+      gap: 0.35rem;
+      margin-top: 0.45rem;
+    }
+
+    .goal-btn {
+      font-size: 0.7rem;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #888;
+      padding: 0.18rem 0.5rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .goal-btn.execute { color: #c8a060; border-color: #5a4020; }
+    .goal-btn.execute:hover { background: #1a1400; }
+    .goal-btn.cancel  { color: #888; }
+    .goal-btn.cancel:hover  { color: #e07070; border-color: #e07070; }
+    .goal-btn:disabled { opacity: 0.4; cursor: default; }
+
+    .goal-steps {
+      margin-top: 0.5rem;
+      font-size: 0.74rem;
+      border-left: 2px solid #2a2010;
+      padding-left: 0.6rem;
+    }
+
+    .goal-step {
+      color: #999;
+      padding: 0.2rem 0;
+      line-height: 1.4;
+    }
+
+    .goal-step.running { color: #c8a060; }
+    .goal-step-tool { color: #555; font-size: 0.68rem; }
+
+    #goals-empty {
+      padding: 1.5rem 1rem;
+      color: #444;
+      font-size: 0.82rem;
+    }
+
     /* Analysis log panel */
     #analysis-log-btn {
       font-size: 0.75rem;
@@ -510,6 +663,7 @@
   <header>
     <span>Oracle</span>
     <div style="display:flex;gap:0.5rem">
+      <button id="goals-btn">goals</button>
       <button id="analyze-btn">analyze</button>
       <button id="analysis-log-btn">log</button>
       <button id="memory-btn">memory</button>
@@ -517,6 +671,23 @@
     </div>
   </header>
   <div id="log"></div>
+
+  <!-- Goals Panel -->
+  <div id="goals-panel">
+    <div id="goals-panel-header">
+      <span>Goals</span>
+      <div class="actions">
+        <button class="mem-action-btn" id="goals-refresh-btn">refresh</button>
+        <button class="mem-action-btn" id="goals-close-btn">✕</button>
+      </div>
+    </div>
+    <div id="goals-new-row">
+      <input id="goals-new-input" type="text" placeholder="Add a goal…" />
+      <button id="goals-new-btn">add</button>
+    </div>
+    <div id="goals-list"></div>
+    <div id="goals-empty">No goals yet. Goals are captured automatically from conversation or added manually above.</div>
+  </div>
 
   <!-- Analysis Log Panel -->
   <div id="analysis-panel">
@@ -820,6 +991,199 @@
         }
       } catch {}
     })();
+
+    // ── Goals panel ────────────────────────────────────────────────────────────
+
+    const goalsPanel   = document.getElementById('goals-panel');
+    const goalsList    = document.getElementById('goals-list');
+    const goalsEmpty   = document.getElementById('goals-empty');
+    const goalsBtn     = document.getElementById('goals-btn');
+
+    function goalStatusLabel(status) {
+      return { active: 'active', done: 'done', cancelled: 'cancelled' }[status] ?? status;
+    }
+
+    function renderGoals(goals) {
+      goalsList.innerHTML = '';
+      const visible = goals.filter(g => g.status !== 'cancelled');
+      goalsEmpty.style.display = visible.length === 0 ? 'block' : 'none';
+      goalsBtn.classList.toggle('has-active', goals.some(g => g.status === 'active'));
+
+      for (const goal of visible) {
+        const item = document.createElement('div');
+        item.className = 'goal-item';
+        item.dataset.id = goal.id;
+
+        const header = document.createElement('div');
+        header.className = 'goal-header';
+        const title  = document.createElement('div');
+        title.className = 'goal-title';
+        title.textContent = goal.title;
+        const badge  = document.createElement('span');
+        badge.className = `goal-status ${goal.status}`;
+        badge.textContent = goalStatusLabel(goal.status);
+        header.appendChild(title);
+        header.appendChild(badge);
+        item.appendChild(header);
+
+        if (goal.description) {
+          const desc = document.createElement('div');
+          desc.className = 'goal-desc';
+          desc.textContent = goal.description;
+          item.appendChild(desc);
+        }
+
+        // Step history
+        if (goal.steps?.length > 0) {
+          const stepsEl = document.createElement('div');
+          stepsEl.className = 'goal-steps';
+          for (const step of goal.steps) {
+            const s = document.createElement('div');
+            s.className = 'goal-step';
+            s.textContent = step.summary || '(no summary)';
+            stepsEl.appendChild(s);
+          }
+          item.appendChild(stepsEl);
+        }
+
+        // Action buttons
+        const actions = document.createElement('div');
+        actions.className = 'goal-actions';
+        if (goal.status === 'active') {
+          const exBtn = document.createElement('button');
+          exBtn.className = 'goal-btn execute';
+          exBtn.textContent = 'execute';
+          exBtn.onclick = () => startGoalExecution(goal, item, exBtn);
+          actions.appendChild(exBtn);
+
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'goal-btn cancel';
+          cancelBtn.textContent = 'cancel';
+          cancelBtn.onclick = async () => {
+            await fetch(`${API}/goals/${goal.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) });
+            loadGoals();
+          };
+          actions.appendChild(cancelBtn);
+        }
+        const delBtn = document.createElement('button');
+        delBtn.className = 'goal-btn';
+        delBtn.textContent = 'delete';
+        delBtn.onclick = async () => {
+          await fetch(`${API}/goals/${goal.id}`, { method: 'DELETE' });
+          loadGoals();
+        };
+        actions.appendChild(delBtn);
+        item.appendChild(actions);
+
+        goalsList.appendChild(item);
+      }
+    }
+
+    async function loadGoals() {
+      try {
+        const res  = await fetch(`${API}/goals`);
+        const goals = await res.json();
+        renderGoals(Array.isArray(goals) ? goals : []);
+      } catch (e) {
+        goalsEmpty.textContent = `Failed to load goals: ${e.message}`;
+        goalsEmpty.style.display = 'block';
+      }
+    }
+
+    function startGoalExecution(goal, itemEl, executeBtn) {
+      executeBtn.disabled = true;
+      executeBtn.textContent = 'running…';
+
+      // Clear old steps from the goal item and add a live steps container
+      let stepsEl = itemEl.querySelector('.goal-steps');
+      if (!stepsEl) {
+        stepsEl = document.createElement('div');
+        stepsEl.className = 'goal-steps';
+        itemEl.insertBefore(stepsEl, itemEl.querySelector('.goal-actions'));
+      }
+      stepsEl.innerHTML = '';
+
+      const es = new EventSource(`${API}/goals/${goal.id}/execute`);
+
+      es.onmessage = (e) => {
+        try {
+          const ev = JSON.parse(e.data);
+
+          if (ev.type === 'step') {
+            const stepEl = document.createElement('div');
+            stepEl.className = 'goal-step';
+            stepEl.textContent = `${ev.index}. ${ev.summary}`;
+            stepsEl.appendChild(stepEl);
+
+            if (ev.toolResults?.length) {
+              ev.toolResults.forEach(tr => {
+                const t = document.createElement('div');
+                t.className = 'goal-step-tool';
+                t.textContent = `  ⚙ ${tr.tool}`;
+                stepsEl.appendChild(t);
+              });
+            }
+
+            if (ev.done) {
+              executeBtn.textContent = 'done';
+              const badge = itemEl.querySelector('.goal-status');
+              if (badge) { badge.className = 'goal-status done'; badge.textContent = 'done'; }
+            }
+          }
+
+          if (ev.type === 'done') {
+            es.close();
+            loadGoals();
+          }
+
+          if (ev.type === 'error') {
+            es.close();
+            executeBtn.disabled = false;
+            executeBtn.textContent = 'execute';
+            const errEl = document.createElement('div');
+            errEl.className = 'goal-step';
+            errEl.style.color = '#e07070';
+            errEl.textContent = `Error: ${ev.message}`;
+            stepsEl.appendChild(errEl);
+          }
+        } catch {}
+      };
+
+      es.onerror = () => {
+        es.close();
+        executeBtn.disabled = false;
+        executeBtn.textContent = 'execute';
+      };
+    }
+
+    document.getElementById('goals-btn').addEventListener('click', () => {
+      goalsPanel.classList.toggle('open');
+      if (goalsPanel.classList.contains('open')) loadGoals();
+    });
+    document.getElementById('goals-close-btn').addEventListener('click', () => goalsPanel.classList.remove('open'));
+    document.getElementById('goals-refresh-btn').addEventListener('click', loadGoals);
+
+    document.getElementById('goals-new-btn').addEventListener('click', async () => {
+      const input = document.getElementById('goals-new-input');
+      const title = input.value.trim();
+      if (!title) return;
+      await fetch(`${API}/goals`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+      input.value = '';
+      loadGoals();
+    });
+
+    document.getElementById('goals-new-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('goals-new-btn').click();
+    });
+
+    // Poll goals count to highlight button when active goals exist
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/goals`);
+        const goals = await res.json();
+        goalsBtn.classList.toggle('has-active', Array.isArray(goals) && goals.some(g => g.status === 'active'));
+      } catch {}
+    }, 30_000);
 
     // ── Analysis log panel ─────────────────────────────────────────────────────
 
