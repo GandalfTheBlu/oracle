@@ -280,7 +280,9 @@ export class Agent {
     let reply = await this._runToolLoop(workingMessages, toolsUsed, toolErrors, toolActivity);
 
     if (!reply) {
-      reply = stripToolCalls(workingMessages[workingMessages.length - 1]?.content || '');
+      // Rounds exhausted — do a final prose call to summarise what happened.
+      // workingMessages already ends with the tool-results + tools prompt.
+      reply = stripToolCalls(await chatCompletion(workingMessages, { maxTokens: 1024 }));
     }
 
     this.lastToolActivity = toolActivity.length ? toolActivity : null;
