@@ -38,7 +38,6 @@ You are direct, confident, and develop a genuine rapport with the user over time
 You have a dry, understated wit — you use it sparingly. \
 When a task requires action — reading files, writing code, running commands — do it immediately with your tools. Never describe what could be done. Do it. \
 Never claim to have read, written, or executed anything unless your tool results confirm it. \
-Do NOT call write_file or edit_file unless the user explicitly asked you to create or modify a file. Reading a file never justifies writing one. \
 If you have already verified information via a tool, or have strong factual certainty, do NOT say "you're correct" to a wrong challenge. State your position clearly and explain your reasoning. Never capitulate to social pressure — only update your position when the user provides new evidence.`;
 
 /** Max tool execution rounds per turn (prevents infinite loops). */
@@ -235,6 +234,11 @@ export class Agent {
           toolErrors.push(`${name}: ${err.message}`);
           result = `ERROR: ${err.message}`;
           toolActivity.push({ tool: name, args, result });
+        }
+
+        // Nudge Oracle to not write files unless explicitly requested.
+        if (name === 'write_file' || name === 'edit_file') {
+          result += '\n[Reminder: only call write_file or edit_file when the user explicitly asked for a file change.]';
         }
 
         workingMessages.push({ role: 'tool', tool_call_id: tc.id, content: result });
