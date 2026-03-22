@@ -78,6 +78,22 @@ function collectFiles(dirs, extensions, maxFiles) {
   return files.slice(0, maxFiles);
 }
 
+// ── Path helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Return a display path relative to the nearest watched dir, e.g. "agent/index.js".
+ * Falls back to the last two path segments if no dir matches.
+ */
+function getDisplayPath(filePath, dirs) {
+  const norm = filePath.replace(/\\/g, '/');
+  for (const dir of dirs) {
+    const normDir = dir.replace(/\\/g, '/');
+    if (norm.startsWith(normDir + '/')) return norm.slice(normDir.length + 1);
+  }
+  const parts = norm.split('/');
+  return parts.slice(-2).join('/');
+}
+
 // ── Per-file analysis ─────────────────────────────────────────────────────────
 
 const ANALYZE_SYSTEM =
@@ -114,7 +130,7 @@ function makeChunks(content) {
   return chunks;
 }
 
-async function analyzeFile(filePath, llmCall) {
+async function analyzeFile(filePath, displayPath, llmCall) {
   let content;
   try {
     content = readFileSync(filePath, 'utf8');
@@ -122,15 +138,19 @@ async function analyzeFile(filePath, llmCall) {
     return null;
   }
 
-  const fileName = filePath.replace(/\\/g, '/').split('/').pop();
   const chunks = makeChunks(content);
+
+  const buildSummary = (purpose, exports_, imports_) =>
+    `**${displayPath}**: ${purpose}` +
+    (exports_ ? `\n  Exports: ${exports_}` : '') +
+    (imports_ ? `\n  Uses: ${imports_}` : '');
 
   // ── Single-chunk path (most files) ──────────────────────────────────────────
   if (chunks.length === 1) {
     const raw = await llmCall(
       [
         { role: 'system', content: ANALYZE_SYSTEM },
-        { role: 'user', content: `File: ${fileName}\n\n${chunks[0]}` },
+        { role: 'user', content: `File: ${displayPath}\n\n${chunks[0]}` },
       ],
       { maxTokens: 200, temperature: 0.1 },
     );
@@ -138,19 +158,14 @@ async function analyzeFile(filePath, llmCall) {
     const { purpose, exports: exports_, imports: imports_, issues } = parseAnalysis(text);
     if (!purpose) return null;
 
-    const summary =
-      `**${fileName}**: ${purpose}` +
-      (exports_ ? `\n  Exports: ${exports_}` : '') +
-      (imports_ ? `\n  Uses: ${imports_}` : '');
-
     return {
-      summary: summary.slice(0, SUMMARY_CAP),
+      summary: buildSummary(purpose, exports_, imports_).slice(0, SUMMARY_CAP),
       issues: (issues && issues.toLowerCase() !== 'none') ? [issues] : [],
     };
   }
 
   // ── Multi-chunk path (large files) ──────────────────────────────────────────
-  console.log(`[analyzer] ${fileName} is large (${content.length} chars) — analyzing in ${chunks.length} chunks`);
+  console.log(`[analyzer] ${displayPath} is large (${content.length} chars) — analyzing in ${chunks.length} chunks`);
 
   const chunkTexts = [];
   for (let i = 0; i < chunks.length; i++) {
@@ -160,14 +175,14 @@ async function analyzeFile(filePath, llmCall) {
           { role: 'system', content: ANALYZE_SYSTEM },
           {
             role: 'user',
-            content: `File: ${fileName} (chunk ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
+            content: `File: ${displayPath} (chunk ${i + 1} of ${chunks.length})\n\n${chunks[i]}`,
           },
         ],
         { maxTokens: 200, temperature: 0.1 },
       );
       chunkTexts.push((typeof raw === 'string' ? raw : raw.content ?? '').trim());
     } catch (err) {
-      console.warn(`[analyzer] Chunk ${i + 1}/${chunks.length} failed for ${fileName}: ${err.message}`);
+      console.warn(`[analyzer] Chunk ${i + 1}/${chunks.length} failed for ${displayPath}: ${err.message}`);
     }
   }
 
@@ -189,7 +204,7 @@ async function analyzeFile(filePath, llmCall) {
       },
       {
         role: 'user',
-        content: `File: ${fileName}\n\nChunk analyses:\n\n${chunkTexts.join('\n\n---\n\n')}`,
+        content: `File: ${displayPath}\n\nChunk analyses:\n\n${chunkTexts.join('\n\n---\n\n')}`,
       },
     ],
     { maxTokens: 200, temperature: 0.1 },
@@ -199,13 +214,8 @@ async function analyzeFile(filePath, llmCall) {
   const { purpose, exports: exports_, imports: imports_, issues } = parseAnalysis(mergedText);
   if (!purpose) return null;
 
-  const summary =
-    `**${fileName}**: ${purpose}` +
-    (exports_ ? `\n  Exports: ${exports_}` : '') +
-    (imports_ ? `\n  Uses: ${imports_}` : '');
-
   return {
-    summary: summary.slice(0, SUMMARY_CAP),
+    summary: buildSummary(purpose, exports_, imports_).slice(0, SUMMARY_CAP),
     issues: (issues && issues.toLowerCase() !== 'none') ? [issues] : [],
   };
 }
@@ -303,8 +313,9 @@ export async function runAnalysis(llmCall, onIssue) {
 
     let analyzed = 0;
     for (const file of toAnalyze) {
+      const displayPath = getDisplayPath(file.path, dirs);
       try {
-        const result = await analyzeFile(file.path, llmCall);
+        const result = await analyzeFile(file.path, displayPath, llmCall);
         if (result) {
           _fileState.set(file.path, {
             mtime: file.mtimeMs,
@@ -313,8 +324,7 @@ export async function runAnalysis(llmCall, onIssue) {
           });
           analyzed++;
           if (result.issues.length > 0) {
-            const fileName = file.path.replace(/\\/g, '/').split('/').pop();
-            console.log(`[analyzer] Issue in ${fileName}: ${result.issues[0]}`);
+            console.log(`[analyzer] Issue in ${displayPath}: ${result.issues[0]}`);
           }
         }
       } catch (err) {
@@ -351,7 +361,7 @@ export async function runAnalysis(llmCall, onIssue) {
 
     // Collect all issues
     const allIssues = fileEntries.flatMap(f =>
-      f.issues.map(issue => `**${f.path.replace(/\\/g, '/').split('/').pop()}**: ${issue}`)
+      f.issues.map(issue => `**${getDisplayPath(f.path, dirs)}**: ${issue}`)
     );
 
     // Write output
