@@ -1,4 +1,8 @@
 {
+  "oracle": {
+    "port": 3000,
+    "dataDir": "data"
+  },
   "llm": {
     "serverHost": "192.168.0.208",
     "port": 8080,
